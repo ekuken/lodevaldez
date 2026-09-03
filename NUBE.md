@@ -12,9 +12,12 @@ siempre y sube la copia cuando vuelve la conexión.
 ## 1. Crear el proyecto
 
 1. Entrá a [supabase.com](https://supabase.com) y creá una cuenta (es gratis).
-2. **New project**. Ponele de nombre `cafes`, elegí una contraseña para la base Uj(~g*26/8("
-   (guardala en algún lado) y como región **South America (São Paulo)**, que es
-   la más cercana.
+2. **New project**. Ponele de nombre `cafes`, elegí una contraseña para la base
+   y como región **South America (São Paulo)**, que es la más cercana.
+
+   > La contraseña de la base **no se escribe acá ni en ningún archivo del
+   > sistema**: este repositorio es público. Guardala en el administrador de
+   > claves del navegador o en un papel.
 3. Esperá unos minutos a que termine de crearse.
 
 ## 2. Crear las tablas
@@ -90,7 +93,39 @@ Abajo de todo en la barra lateral hay un cartelito:
 - **☁ Guardado** — todo subido
 - **⏳ Guardando…** — está mandando los cambios
 - **⚠ Sin conexión** — se cortó internet. Se sigue trabajando normal y se sube solo cuando vuelve
+- **⚠ Falta configurar** — hay internet, pero la base rechaza el pedido (ver abajo)
 - **⚠ Solo en esta PC** — falta configurar los pasos de arriba
+
+---
+
+## Si dice "Falta configurar" (o no se guarda nada en la base)
+
+Quiere decir que el sistema entró bien pero la base no acepta lo que le manda.
+Casi siempre es una de estas dos:
+
+1. **El paso 2 no se corrió, o se cortó por la mitad.** Es lo más común.
+   Volvé a **SQL Editor → New query**, pegá todo `supabase.sql` de nuevo y dale
+   **Run**. Se puede correr las veces que haga falta, no rompe nada ni borra
+   datos. Al final tiene que mostrar una fila con:
+
+   | tablas | funciones | politicas |
+   |--------|-----------|-----------|
+   | 3      | 2         | 5         |
+
+   Si algún número es menor, mirá el mensaje de error rojo: el script se cortó ahí.
+
+2. **Falta el paso 4**: la cuenta con la que entraste no está en la tabla
+   `miembros`, así que la base no le deja ver ningún café.
+
+### Para ver exactamente qué falla
+
+En la computadora del café, con el sistema abierto: **F12** → pestaña
+**Console** → escribí `nubeRevisar()` y Enter. Va a listar los cinco puntos
+(conexión, sesión, `miembros`, `locales`, función `guardar_local`) y marcar en
+cuál se traba. Los errores de la nube también quedan escritos ahí solos.
+
+> Mientras tanto **no se pierde nada**: todo se sigue guardando en la
+> computadora y se sube apenas la base quede bien.
 
 ---
 
