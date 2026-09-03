@@ -252,8 +252,8 @@ function imprimirResumenCuenta(id){
       '<tr><td><b>SALDO</b></td><td align="right"><b>' + fmt(saldoCuenta(id)) + '</b></td></tr>' +
     '</table>' +
     '<div class="l"></div>' +
-    '<div class="c" style="font-size:10px">Documento no v&aacute;lido como factura</div>';
-  window.print();
+    '<div class="c s">Documento no v&aacute;lido como factura</div>';
+  tkImprimir();
 }
 
 function exportarCuentas(){

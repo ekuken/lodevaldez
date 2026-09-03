@@ -27,6 +27,14 @@ function renderAjustes(){
       '<div class="field"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="cfStk" ' + (c.descontarStock ? 'checked' : '') + '> Descontar stock al cobrar</label>' +
         '<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfCom" ' + (c.comandaImprime ? 'checked' : '') + '> Imprimir al enviar el pedido</label></div>' +
     '</div>' +
+    '<div class="field" style="margin-top:12px"><label>Ancho del papel de la impresora</label>' +
+      '<select id="cfPapel">' +
+        [[80, '80 mm — el tamaño normal'], [58, '58 mm — impresora chica']]
+          .map(o => '<option value="' + o[0] + '" ' + (anchoTicket() === o[0] ? 'selected' : '') + '>' + o[1] + '</option>').join('') +
+      '</select></div>' +
+    '<div class="small muted" style="margin-top:6px">Es la impresora de <b>' + esc(local() ? local().nombre : 'este café') +
+      '</b>: cada local tiene la suya, y cambiarlo acá no afecta al otro. ' +
+      'En papel de 58 mm el ticket sale con letra más chica para que entre el precio.</div>' +
     '<div class="sep"></div>' +
     '<label class="chk"><input type="checkbox" id="cfPropOn" ' + (c.propinaOn ? 'checked' : '') + '> Mostrar propina sugerida en la cuenta y el ticket</label>' +
     '<div class="field" style="margin-top:10px"><label>Porcentaje de propina sugerida</label>' +
@@ -119,6 +127,7 @@ function guardarConfig(){
   S.config.recargoOn = $('#cfRecOn').checked;
   S.config.recargoCredito = Math.max(0, Math.min(100, num($('#cfRec').value)));
   S.config.loginOn = $('#cfLogin').checked;
+  S.config.anchoTicket = Number($('#cfPapel').value) === 58 ? 58 : 80;
   save(); refresh(); toast('Configuración guardada');
 }
 

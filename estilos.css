@@ -348,14 +348,23 @@ tbody tr:hover{background:var(--panel-2)}
 @media(max-width:480px){.pax-grid{grid-template-columns:repeat(4,1fr)}}
 /* ---------- Ticket ---------- */
 #tk{display:none}
+/* El ancho del papel cambia según la impresora de cada café: los valores
+   reales los pone tkAplicarAncho() al imprimir (ver 05-caja.js). */
+:root{--tk-ancho:72mm;--tk-fuente:15px}
 @media print{
   body>.app,body>.ovl,body>.toast{display:none !important}
-  #tk{display:block !important;font-family:'Courier New',monospace;color:#000;width:72mm;margin:0 auto;
-    font-size:15px;font-weight:700;line-height:1.35}
+  #tk{display:block !important;font-family:'Courier New',monospace;color:#000;
+    width:var(--tk-ancho);margin:0 auto;
+    font-size:var(--tk-fuente);font-weight:700;line-height:1.35}
   @page{margin:4mm;size:80mm auto}
 }
 #tk .c{text-align:center}
 #tk .l{border-top:2px dashed #000;margin:6px 0}
-#tk table{width:100%;font-size:15px}
-#tk td{padding:2px 0;border:0}
+#tk table{width:100%;font-size:var(--tk-fuente)}
+/* El nombre largo del producto parte de renglón; el precio nunca se corta
+   ni se va del papel. Sin esto, en papel angosto el precio desaparecía. */
+#tk td{padding:2px 0;border:0;overflow-wrap:anywhere}
+#tk td[align="right"]{white-space:nowrap;padding-left:6px;overflow-wrap:normal}
+/* Letra chica del ticket (precio unitario, notas, aclaraciones al pie) */
+#tk .s{font-size:calc(var(--tk-fuente) - 4px)}
 #tk b{font-weight:900}

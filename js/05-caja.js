@@ -290,6 +290,37 @@ function guardarCierre(efectivo, efeCompras, ventas){
 /* ============================================================
    IMPRESIÓN
    ============================================================ */
+/* ---------- Ancho del papel ----------
+   Cada café tiene su impresora: la de Lo de Valdez es de 80 mm y la de
+   Evacafé más angosta. En papel chico, con la letra de 80 mm el nombre del
+   producto empujaba al precio fuera del papel y no se veía. Acá se ajustan
+   el tamaño de página, el ancho útil y la letra al papel de este café. */
+/* Medidas de cada papel. OJO: el cabezal de una impresora térmica marca
+   MENOS que el ancho del papel. En las de 80 mm son 72 mm útiles (576
+   puntos) y en las de 58 mm, 48 mm (384 puntos). Usar el ancho del papel
+   como si fuera todo imprimible corta el borde derecho, que es justo donde
+   va el precio. */
+const TK_PAPEL = {
+  80: { util: 72, margen: 4, fuente: 15 },
+  58: { util: 48, margen: 5, fuente: 11 }
+};
+function anchoTicket(){
+  return Number(S.config.anchoTicket) === 58 ? 58 : 80;
+}
+function tkAplicarAncho(){
+  const a = anchoTicket();
+  const p = TK_PAPEL[a];
+  let st = document.getElementById('tkEstilo');
+  if (!st){ st = document.createElement('style'); st.id = 'tkEstilo'; document.head.appendChild(st); }
+  st.textContent = ':root{--tk-ancho:' + p.util + 'mm;--tk-fuente:' + p.fuente + 'px}' +
+                   '@media print{@page{margin:' + p.margen + 'mm;size:' + a + 'mm auto}}';
+}
+/* Único lugar desde donde se manda a imprimir */
+function tkImprimir(){
+  tkAplicarAncho();
+  tkImprimir();
+}
+
 function tkHead(){
   const c = S.config;
   return '<div class="c"><b>' + esc(c.nombre) + '</b></div>' +
@@ -301,8 +332,8 @@ function tkHead(){
 function tkItems(p){
   return '<table>' + p.items.map(i =>
     '<tr><td>' + i.cant + ' x ' + esc(i.nombre) + '</td><td align="right">' + fmt(i.precio * i.cant) + '</td></tr>' +
-    (i.cant > 1 ? '<tr><td colspan="2" style="font-size:11px">&nbsp;&nbsp;&nbsp;' + fmt(i.precio) + ' c/u</td></tr>' : '') +
-    (i.nota ? '<tr><td colspan="2" style="font-size:11px">&nbsp;&nbsp;&nbsp;* ' + esc(i.nota) + '</td></tr>' : '')
+    (i.cant > 1 ? '<tr><td colspan="2" class="s">&nbsp;&nbsp;&nbsp;' + fmt(i.precio) + ' c/u</td></tr>' : '') +
+    (i.nota ? '<tr><td colspan="2" class="s">&nbsp;&nbsp;&nbsp;* ' + esc(i.nota) + '</td></tr>' : '')
   ).join('') + '</table>';
 }
 
@@ -331,7 +362,7 @@ function tkTotales(p, conPago){
           '<tr><td>Propina sugerida (' + S.config.propina + '%)</td><td align="right">' + fmt(prop) + '</td></tr>' +
           '<tr><td><b>TOTAL CON PROPINA</b></td><td align="right"><b>' + fmt(total(p) + prop) + '</b></td></tr>' +
         '</table>' +
-        '<div style="font-size:10px;text-align:center;margin-top:2px">La propina es voluntaria</div>'
+        '<div class="c s" style="margin-top:2px">La propina es voluntaria</div>'
       : '');
 }
 
@@ -345,7 +376,7 @@ function imprimirPedido(p, nuevos, reimpresion){
     tkHead() +
     '<div class="l"></div>' +
     '<div class="c"><b>' + (cobrado ? 'TICKET' : 'PEDIDO') + ' N&deg; ' + p.num + (reimpresion ? ' (COPIA)' : '') + '</b></div>' +
-    '<div class="c" style="font-size:15px"><b>' +
+    '<div class="c"><b>' +
       (p.tipo === 'mesa' ? 'MESA ' + p.mesaNum : 'PARA LLEVAR') + '</b></div>' +
     '<div>' + (cobrado ? fechaCorta(p.cerrado) + ' ' + hora(p.cerrado) : fechaCorta(new Date()) + ' ' + hora(new Date())) + '</div>' +
     (p.personas ? '<div>Personas: ' + p.personas + '</div>' : '') +
@@ -356,15 +387,15 @@ function imprimirPedido(p, nuevos, reimpresion){
       '<tr><td>' + (esNuevo(i) ? '&gt;&gt; ' : '') + '<b>' + i.cant + ' x ' + esc(i.nombre) + '</b>' +
         (esNuevo(i) ? ' *NUEVO*' : '') + '</td>' +
       '<td align="right">' + fmt(i.precio * i.cant) + '</td></tr>' +
-      (i.cant > 1 ? '<tr><td colspan="2" style="font-size:11px">&nbsp;&nbsp;&nbsp;' + fmt(i.precio) + ' c/u</td></tr>' : '') +
-      (i.nota ? '<tr><td colspan="2" style="font-size:11px">&nbsp;&nbsp;&nbsp;* ' + esc(i.nota) + '</td></tr>' : '')
+      (i.cant > 1 ? '<tr><td colspan="2" class="s">&nbsp;&nbsp;&nbsp;' + fmt(i.precio) + ' c/u</td></tr>' : '') +
+      (i.nota ? '<tr><td colspan="2" class="s">&nbsp;&nbsp;&nbsp;* ' + esc(i.nota) + '</td></tr>' : '')
     ).join('') + '</table>' +
     '<div class="l"></div>' +
     tkTotales(p, cobrado) +
     '<div class="l"></div>' +
     '<div class="c">' + esc(S.config.pieTicket) + '</div>' +
-    '<div class="c" style="font-size:10px;margin-top:4px">Documento no v&aacute;lido como factura</div>';
-  window.print();
+    '<div class="c s" style="margin-top:4px">Documento no v&aacute;lido como factura</div>';
+  tkImprimir();
   toast(reimpresion ? 'Pedido reimpreso' : 'Pedido impreso y enviado');
 }
 
@@ -414,5 +445,5 @@ function imprimirCierre(){
         '<tr><td><b>Diferencia</b></td><td align="right"><b>' + fmt(cont - esp) + '</b></td></tr>' : '') +
     '</table>' +
     '<div class="l"></div><div style="height:26px"></div><div class="c">Firma responsable</div>';
-  window.print();
+  tkImprimir();
 }
