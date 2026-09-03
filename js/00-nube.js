@@ -7,8 +7,9 @@
    ============================================================ */
 
 /* --- Datos del proyecto de Supabase (ver NUBE.md) --- */
-const NUBE_URL  = '';   /* https://xxxxxxxx.supabase.co  */
-const NUBE_KEY  = '';   /* clave "anon public"           */
+const NUBE_URL = 'https://hiwheqcslweegkdcvurh.supabase.co';
+const NUBE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhpd2hlcWNzbHdlZWdrZGN2dXJoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyOTI5NTMsImV4cCI6MjEwMzg2ODk1M30.UNibpKa3RPccxHlXGrhcWd9DOoxdZfAxwMWwvP1-uSk';
+
 
 const NUBE_LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
 
