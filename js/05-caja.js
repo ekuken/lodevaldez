@@ -318,7 +318,7 @@ function tkAplicarAncho(){
 /* Único lugar desde donde se manda a imprimir */
 function tkImprimir(){
   tkAplicarAncho();
-  tkImprimir();
+  window.print();      /* el ÚNICO window.print() del sistema */
 }
 
 function tkHead(){
