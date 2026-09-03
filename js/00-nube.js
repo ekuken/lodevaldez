@@ -31,6 +31,9 @@ const NUBE_ERRORES_DE_SETUP = [
   'PGRST202',  /* no existe la función guardar_local */
   'PGRST205',  /* no existe la tabla */
   'PGRST301',  /* la sesión no sirve / no autenticado */
+  'PGRST116',  /* la base no devolvió ninguna fila: casi siempre es que las
+                  reglas de seguridad la esconden porque la cuenta no figura
+                  en "miembros". NO es un problema de internet. */
   '42883',     /* function does not exist */
   '42P01',     /* relation does not exist */
   '42501',     /* permission denied: faltan los GRANT */
@@ -64,13 +67,19 @@ function nubeCargarLibreria(){
   if (window.supabase) return Promise.resolve(true);
   return new Promise(resolve => {
     let listo = false;
-    const fin = () => { if (!listo){ listo = true; resolve(!!window.supabase); } };
+    const fin = motivo => {
+      if (listo) return;
+      listo = true;
+      if (!window.supabase) console.error('[nube] no cargó la librería de Supabase (' + motivo +
+        '). Sin ella el sistema trabaja solo en esta computadora. Dirección: ' + NUBE_LIB);
+      resolve(!!window.supabase);
+    };
     const s = document.createElement('script');
     s.src = NUBE_LIB;
-    s.onload = fin;
-    s.onerror = fin;
+    s.onload  = () => fin('cargó el archivo');
+    s.onerror = () => fin('no se pudo bajar el archivo: sin internet, o el CDN está bloqueado');
     document.head.appendChild(s);
-    setTimeout(fin, 6000);          /* no esperar para siempre */
+    setTimeout(() => fin('tardó más de 6 segundos'), 6000);
   });
 }
 function nubeIniciar(){
@@ -133,6 +142,10 @@ async function nubeBajar(localId){
     if (error || !data){
       /* Sin la versión de la nube, subir pisaría lo que haya del otro lado:
          se corta la subida hasta poder leer. */
+      if (error && error.code === 'PGRST116')
+        console.error('[nube] la base no devuelve el café "' + localId + '". La cuenta ' +
+          'inició sesión bien, pero no figura en la tabla "miembros" para ese café, ' +
+          'así que las reglas de seguridad le esconden la fila. Ver el paso 4 de NUBE.md.');
       nubeFallo('bajando el café "' + localId + '"', error);
       NUBE.activa = false;
       return null;

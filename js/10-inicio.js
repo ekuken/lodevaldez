@@ -43,6 +43,12 @@ async function arrancarSistema(){
     else if (mios.length === 1) LOCAL = mios[0];
     else if (LOCAL && !mios.includes(LOCAL)) LOCAL = null;
   } else {
+    /* Acá se llega solo si la nube no está configurada o si no se pudo bajar
+       la librería de Supabase. En el segundo caso el motivo ya quedó escrito
+       en la consola por nubeCargarLibreria(). */
+    if (nubeConfigurada())
+      console.error('[nube] arrancando sin nube: no se pudo cargar la librería. ' +
+                    'Los datos quedan solo en esta computadora.');
     nubeEstado(nubeConfigurada() ? 'error' : 'local');
   }
   if (!LOCALES.some(l => l.id === LOCAL)){ LOCAL = null; return mostrarLocales(); }
