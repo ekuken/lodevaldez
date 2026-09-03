@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sistema de Café</title>
+<link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo">
+        <div class="cup">&#9749;</div>
+        <div style="min-width:0">
+          <div class="nm" id="brandName">Mi Caf&eacute;</div>
+          <div class="sb" id="brandSub">Sistema de gesti&oacute;n</div>
+        </div>
+      </div>
+    </div>
+    <nav id="nav">
+      <button data-v="mesas" class="on"><span class="ic">&#127869;</span><span class="lb">Mesas</span><span class="badge hide" id="badgeMesas">0</span></button>
+      <button data-v="pedidos"><span class="ic">&#129534;</span><span class="lb">Pedidos</span></button>
+      <button data-v="caja"><span class="ic">&#128181;</span><span class="lb">Caja</span></button>
+      <button data-v="cuentas"><span class="ic">&#128212;</span><span class="lb">Cuentas</span><span class="badge hide" id="badgeCuentas">0</span></button>
+      <button data-v="productos"><span class="ic">&#9749;</span><span class="lb">Productos</span><span class="badge hide" id="badgeStock">0</span></button>
+      <button data-v="proveedores"><span class="ic">&#128666;</span><span class="lb">Proveedores</span></button>
+      <button data-v="ajustes"><span class="ic">&#9881;</span><span class="lb">Ajustes</span></button>
+    </nav>
+    <div class="side-foot">
+      <div class="row" style="gap:8px;flex-wrap:nowrap">
+        <div class="grow" id="usrChip"></div>
+        <button class="btn xs" onclick="cerrarSesion()" title="Cambiar de usuario">Salir</button>
+      </div>
+      <div id="footDate" style="margin-top:7px"></div>
+      <div style="margin-top:7px"><span class="pill gray" id="nubeEstado"></span></div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <div>
+        <h1 id="vTitle">Mesas</h1>
+        <div class="sub" id="vSub">Estado del sal&oacute;n</div>
+      </div>
+      <div class="sp"></div>
+      <div class="row" id="topActions"></div>
+    </header>
+    <div class="wrap">
+      <section id="v-mesas"></section>
+      <section id="v-pedidos" class="hide"></section>
+      <section id="v-caja" class="hide"></section>
+      <section id="v-cuentas" class="hide"></section>
+      <section id="v-productos" class="hide"></section>
+      <section id="v-proveedores" class="hide"></section>
+      <section id="v-ajustes" class="hide"></section>
+    </div>
+  </div>
+</div>
+
+<div class="ovl" id="ovl" hidden></div>
+<div class="ovl" id="login" hidden></div>
+<div id="tk"></div>
+
+<script src="js/00-nube.js"></script>
+<script src="js/01-nucleo.js"></script>
+<script src="js/02-ingreso.js"></script>
+<script src="js/03-salon-y-venta.js"></script>
+<script src="js/04-pedidos.js"></script>
+<script src="js/05-caja.js"></script>
+<script src="js/06-productos.js"></script>
+<script src="js/07-proveedores.js"></script>
+<script src="js/08-cuentas.js"></script>
+<script src="js/09-ajustes.js"></script>
+<script src="js/10-inicio.js"></script>
+</body>
+</html>
