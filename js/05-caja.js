@@ -295,14 +295,16 @@ function guardarCierre(efectivo, efeCompras, ventas){
    Evacafé más angosta. En papel chico, con la letra de 80 mm el nombre del
    producto empujaba al precio fuera del papel y no se veía. Acá se ajustan
    el tamaño de página, el ancho útil y la letra al papel de este café. */
-/* Medidas de cada papel. OJO: el cabezal de una impresora térmica marca
-   MENOS que el ancho del papel. En las de 80 mm son 72 mm útiles (576
-   puntos) y en las de 58 mm, 48 mm (384 puntos). Usar el ancho del papel
-   como si fuera todo imprimible corta el borde derecho, que es justo donde
-   va el precio. */
+/* Medidas de cada papel.
+   NO se fija el ancho en milímetros: el área que el cabezal puede marcar es
+   más angosta que el papel y cambia según el modelo, así que cualquier
+   medida que pongamos acá puede pasarse y cortar el borde derecho, que es
+   justo donde va el precio. El ticket ocupa el 100% de la página que
+   informa el driver, y lo único que se ajusta por papel es el tamaño de
+   letra y cuánto del renglón se le reserva al precio. */
 const TK_PAPEL = {
-  80: { util: 72, margen: 4, fuente: 15 },
-  58: { util: 48, margen: 5, fuente: 11 }
+  80: { margen: 4, fuente: 15, precio: '34%' },
+  58: { margen: 4, fuente: 10, precio: '42%' }
 };
 function anchoTicket(){
   return Number(S.config.anchoTicket) === 58 ? 58 : 80;
@@ -312,7 +314,7 @@ function tkAplicarAncho(){
   const p = TK_PAPEL[a];
   let st = document.getElementById('tkEstilo');
   if (!st){ st = document.createElement('style'); st.id = 'tkEstilo'; document.head.appendChild(st); }
-  st.textContent = ':root{--tk-ancho:' + p.util + 'mm;--tk-fuente:' + p.fuente + 'px}' +
+  st.textContent = ':root{--tk-fuente:' + p.fuente + 'px;--tk-precio:' + p.precio + '}' +
                    '@media print{@page{margin:' + p.margen + 'mm;size:' + a + 'mm auto}}';
 }
 /* Único lugar desde donde se manda a imprimir */

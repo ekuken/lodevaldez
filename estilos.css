@@ -350,21 +350,26 @@ tbody tr:hover{background:var(--panel-2)}
 #tk{display:none}
 /* El ancho del papel cambia según la impresora de cada café: los valores
    reales los pone tkAplicarAncho() al imprimir (ver 05-caja.js). */
-:root{--tk-ancho:72mm;--tk-fuente:15px}
+:root{--tk-fuente:15px;--tk-precio:34%}
 @media print{
   body>.app,body>.ovl,body>.toast{display:none !important}
+  /* Ancho en % y NO en mm: así el ticket ocupa el papel que el driver de la
+     impresora dice tener, sea cual sea. Con una medida fija en mm, si el
+     área imprimible real era más angosta, el renglón se pasaba y la parte
+     de la derecha —el precio— salía cortada. */
   #tk{display:block !important;font-family:'Courier New',monospace;color:#000;
-    width:var(--tk-ancho);margin:0 auto;
+    width:100%;max-width:100%;overflow:hidden;
     font-size:var(--tk-fuente);font-weight:700;line-height:1.35}
   @page{margin:4mm;size:80mm auto}
 }
 #tk .c{text-align:center}
 #tk .l{border-top:2px dashed #000;margin:6px 0}
-#tk table{width:100%;font-size:var(--tk-fuente)}
-/* El nombre largo del producto parte de renglón; el precio nunca se corta
-   ni se va del papel. Sin esto, en papel angosto el precio desaparecía. */
+/* Reparto fijo de las dos columnas: al precio se le reserva su lugar y
+   nadie se lo puede quitar. Con el reparto automático, un nombre largo se
+   quedaba con todo el renglón y empujaba al precio fuera del papel. */
+#tk table{width:100%;font-size:var(--tk-fuente);table-layout:fixed}
 #tk td{padding:2px 0;border:0;overflow-wrap:anywhere}
-#tk td[align="right"]{white-space:nowrap;padding-left:6px;overflow-wrap:normal}
+#tk td[align="right"]{width:var(--tk-precio);white-space:nowrap;padding-left:4px;overflow-wrap:normal}
 /* Letra chica del ticket (precio unitario, notas, aclaraciones al pie) */
 #tk .s{font-size:calc(var(--tk-fuente) - 4px)}
 #tk b{font-weight:900}
