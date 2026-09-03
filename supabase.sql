@@ -12,6 +12,12 @@ create table if not exists public.locales (
   actualizado timestamptz not null default now()
 );
 
+-- Si la tabla ya venía de antes, "create table if not exists" no la toca:
+-- estas tres líneas agregan lo que le falte y no hacen nada si ya está.
+alter table public.locales add column if not exists datos       jsonb       not null default '{}'::jsonb;
+alter table public.locales add column if not exists version     bigint      not null default 1;
+alter table public.locales add column if not exists actualizado timestamptz not null default now();
+
 insert into public.locales (id, nombre) values
   ('valdez', 'Lo de Valdez'),
   ('eva',    'Evacafé')
@@ -36,6 +42,11 @@ create table if not exists public.respaldos (
   creado   timestamptz not null default now()
 );
 
+-- Igual que arriba: por si la tabla ya existía con otra forma.
+alter table public.respaldos add column if not exists local_id text;
+alter table public.respaldos add column if not exists datos    jsonb;
+alter table public.respaldos add column if not exists creado   timestamptz not null default now();
+
 create index if not exists respaldos_local_fecha
   on public.respaldos (local_id, creado desc);
 
@@ -50,7 +61,26 @@ alter table public.locales   enable row level security;
 alter table public.miembros  enable row level security;
 alter table public.respaldos enable row level security;
 
+-- ---------- Permisos sobre las tablas ----------
+-- OJO: RLS decide QUÉ FILAS ve cada uno, pero antes hace falta el permiso
+-- común de Postgres sobre la tabla. Sin estos GRANT la base contesta
+-- "permission denied for table locales" aunque las políticas estén bien.
+grant usage on schema public to authenticated;
+
+grant select, update on public.locales   to authenticated;
+grant select         on public.miembros  to authenticated;
+grant select, insert on public.respaldos to authenticated;
+grant usage, select  on sequence public.respaldos_id_seq to authenticated;
+
+-- Sin iniciar sesión no se toca nada.
+revoke all on public.locales   from anon;
+revoke all on public.miembros  from anon;
+revoke all on public.respaldos from anon;
+
 -- ¿El usuario que está pidiendo es miembro de este café?
+-- Se reemplaza, NO se borra: puede haber muchas políticas colgando de ella
+-- y un "drop" las arrastraría. Como la firma y el tipo de retorno no cambian,
+-- "create or replace" funciona sin tocar nada de lo que ya depende.
 create or replace function public.es_miembro(p_local text)
 returns boolean
 language sql
@@ -103,7 +133,8 @@ create policy "crear respaldos de su cafe" on public.respaldos
 --  Si otra computadora guardó mientras tanto, avisa en vez de
 --  pisar los datos.
 -- ============================================================
-create or replace function public.guardar_local(
+drop function if exists public.guardar_local(text, jsonb, bigint);
+create function public.guardar_local(
   p_local   text,
   p_datos   jsonb,
   p_version bigint
@@ -153,3 +184,36 @@ $$;
 
 revoke all on function public.guardar_local(text, jsonb, bigint) from public;
 grant execute on function public.guardar_local(text, jsonb, bigint) to authenticated;
+
+-- ============================================================
+--  Avisarle a la API que hay cosas nuevas. Sin esto, la función
+--  recién creada puede seguir contestando "no existe" un rato.
+-- ============================================================
+notify pgrst, 'reload schema';
+
+-- ============================================================
+--  Control. Tiene que decir:
+--    tablas               3
+--    funciones            2
+--    columnas_de_locales  datos=jsonb, version=bigint
+--    estorba_en_respaldos (vacío)
+--  Si algo no da, el script se cortó por un error más arriba.
+-- ============================================================
+select
+  (select count(*) from pg_tables where schemaname = 'public'
+     and tablename in ('locales','miembros','respaldos'))                    as tablas,
+  (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public'
+       and p.proname in ('es_miembro','guardar_local'))                      as funciones,
+  -- Columnas que el sistema necesita en "locales", con su tipo.
+  -- Tiene que decir exactamente: datos=jsonb, version=bigint.
+  (select string_agg(column_name || '=' || data_type, ', ' order by column_name)
+     from information_schema.columns
+    where table_schema='public' and table_name='locales'
+      and column_name in ('datos','version'))                                as columnas_de_locales,
+  -- Columnas obligatorias de "respaldos" que el guardado no llena:
+  -- si aparece alguna, la copia de respaldo va a fallar en cada guardado.
+  (select string_agg(column_name, ', ') from information_schema.columns
+    where table_schema='public' and table_name='respaldos'
+      and is_nullable='NO' and column_default is null
+      and column_name not in ('local_id','datos'))                           as estorba_en_respaldos;

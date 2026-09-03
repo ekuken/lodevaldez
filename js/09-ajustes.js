@@ -166,12 +166,24 @@ function htmlNube(){
     guardando:    ['gray', '⏳ Guardando en la nube…'],
     conflicto:    ['warn', '⚠ Otra computadora guardó cambios'],
     error:        ['bad',  '⚠ Sin conexión con la nube'],
+    configurar:   ['bad',  '⚠ La base todavía no está preparada'],
     local:        ['warn', '⚠ Solo en esta computadora']
   }[NUBE.estado] || ['gray', '—'];
   return '<div class="sep"></div>' +
     '<div class="row" style="margin-bottom:10px">' +
       '<b class="small">Nube:</b><span class="pill ' + est[0] + '">' + est[1] + '</span>' +
     '</div>' +
+    (NUBE.estado === 'configurar'
+      ? '<div class="alert warn small" style="margin-bottom:10px"><span>⚠</span><div>' +
+        'Hay internet y la sesión está iniciada, pero la base rechaza el pedido, ' +
+        'así que <b>los datos se están guardando solo en esta computadora</b>.<br>' +
+        'Falta correr <b>supabase.sql</b> en Supabase (SQL Editor → New query → Run) ' +
+        'o dar de alta esta cuenta en la tabla <b>miembros</b> (paso 4 de NUBE.md).' +
+        (NUBE.ultimoError ? '<br><span class="mono small muted">' +
+           esc(String(NUBE.ultimoError.code || '') + ' ' + String(NUBE.ultimoError.message || '')) +
+           '</span>' : '') +
+        '</div></div>'
+      : '') +
     '<div class="row">' +
       '<button class="btn sm" onclick="guardarEnNubeAhora()">☁ Guardar en la nube ahora</button>' +
       '<button class="btn sm dan" onclick="salirDeLaNube()">Cerrar sesión de esta computadora</button>' +

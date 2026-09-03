@@ -31,10 +31,17 @@ async function arrancarSistema(){
     const sesion = await nubeSesion();
     if (!sesion) return mostrarIngresoNube();
     NUBE.activa = true;
+    nubeEstado('guardando');                  /* conectando… */
     /* Si la cuenta entra a un solo café, se elige solo */
     const mios = await nubeMisLocales();
-    if (mios.length === 1) LOCAL = mios[0];
-    else if (LOCAL && mios.length && !mios.includes(LOCAL)) LOCAL = null;
+    if (!mios.length){
+      /* Entró pero la base no le devuelve ningún café: falta el paso 4 de
+         NUBE.md o faltan los permisos. Se trabaja igual en la computadora,
+         pero no se intenta subir: el cartelito ya avisa "Falta configurar". */
+      NUBE.activa = false;
+    }
+    else if (mios.length === 1) LOCAL = mios[0];
+    else if (LOCAL && !mios.includes(LOCAL)) LOCAL = null;
   } else {
     nubeEstado(nubeConfigurada() ? 'error' : 'local');
   }
