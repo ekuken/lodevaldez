@@ -31,6 +31,7 @@ const DEFAULT_STATE = {
     nextNum: 1,
     descontarStock: true,
     comandaImprime: true,
+    anchoTicket: 80,       /* mm de papel de la impresora de ESTE café */
 
     propinaOn: true,
     propina: 10,
@@ -84,26 +85,20 @@ function save(){
   if (typeof nubeGuardar === 'function') nubeGuardar();
 }
 
-/* Trae los datos de la nube si son más nuevos que los de esta computadora */
+/* Trae lo que hay en la nube y lo junta con lo de esta computadora.
+   Antes se elegía "todo lo de la nube" o "todo lo de acá" comparando fechas
+   y cantidad de pedidos; con dos computadoras eso borraba el trabajo de una.
+   Ahora se combina registro por registro (ver nubeCombinar en 00-nube.js). */
 async function cargarDesdeNube(){
   if (typeof nubeBajar !== 'function') return;
   const remoto = await nubeBajar(LOCAL);
-  if (!remoto) return;                       /* sin nube o café vacío */
-  const propio = S && S.pedidos ? S.pedidos.length : 0;
-  const ajeno  = remoto.pedidos ? remoto.pedidos.length : 0;
-  const guardadoLocal = (S && S.guardado) || '';
-  const guardadoNube  = remoto.guardado || '';
-  /* Se toma la nube salvo que acá haya algo más nuevo sin subir */
-  if (guardadoNube >= guardadoLocal || ajeno > propio){
-    S = Object.assign({}, structuredClone(DEFAULT_STATE), remoto);
-    S.config = Object.assign({}, DEFAULT_STATE.config, remoto.config || {});
-    S.salon  = Object.assign({}, DEFAULT_STATE.salon, remoto.salon || {});
-    migrar();
-    try{ localStorage.setItem(KEY(), JSON.stringify(S)); }catch(e){}
-    nubeEstado('sincronizado');
-  } else {
-    nubeGuardar();                           /* lo de acá es más nuevo: subirlo */
+  if (!NUBE.activa) return;                  /* no se pudo leer: ya avisó nubeBajar */
+  if (!remoto){                              /* café vacío en la nube: subir lo de acá */
+    nubeBaseEscribir({});
+    nubeGuardar();
+    return;
   }
+  nubeJuntarConLaNube(remoto);
 }
 
 /* Completa los campos del plano en datos guardados con versiones anteriores */
