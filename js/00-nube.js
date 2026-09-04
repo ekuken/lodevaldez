@@ -273,6 +273,86 @@ function nubeCombinarObjeto(base, mio, suyo, cuenta, saltear){
 
 function nubeProximoNum(c){ return c && typeof c.nextNum === 'number' ? c.nextNum : 1; }
 
+/* ---------- Catálogos: lo que HAY en el café ----------
+   Las listas se dividen en dos clases y no se combinan igual:
+
+   - Registro de lo que pasó (pedidos, compras, cierres, pagos, movimientos):
+     si un pedido está de un solo lado, es que esa computadora lo cargó.
+     Sumar los dos lados es lo correcto.
+
+   - Catálogo de lo que hay (mesas, productos, proveedores, cuentas,
+     usuarios): la mesa 5 del café es UNA. Si cada computadora armó su
+     salón por su cuenta, la misma mesa quedó con un id distinto en cada
+     una; combinando por id sobreviven las dos y en el plano se ven una
+     encima de la otra. Por eso los catálogos llevan además una clave
+     natural: dos registros con la misma clave son el mismo, tengan el id
+     que tengan.                                                          */
+const NUBE_CLAVE_NATURAL = {
+  mesas:       m => 'mesa:' + m.num,
+  productos:   p => 'prod:' + nubeTextoClave(p.nombre),
+  proveedores: p => 'prov:' + nubeTextoClave(p.nombre),
+  cuentas:     c => 'cta:'  + nubeTextoClave(c.nombre),
+  usuarios:    u => 'usr:'  + nubeTextoClave(u.nombre)
+};
+function nubeTextoClave(s){ return String(s == null ? '' : s).trim().toLowerCase(); }
+
+/* Deja un solo registro por clave natural. "prefiere" decide cuál se queda
+   cuando hay repetidos: se usa para no descartar la mesa que tiene una
+   cuenta abierta ni el usuario con el que alguien está trabajando. */
+function nubeSacarDuplicados(lista, clave, prefiere){
+  if (!Array.isArray(lista)) return [];
+  const donde = {}, salida = [];
+  let sacados = 0;
+  lista.forEach(x => {
+    if (!x || typeof x !== 'object'){ salida.push(x); return; }
+    const k = clave(x);
+    if (donde[k] === undefined){ donde[k] = salida.length; salida.push(x); return; }
+    sacados++;
+    if (prefiere && prefiere(x) && !prefiere(salida[donde[k]])) salida[donde[k]] = x;
+  });
+  salida.sacados = sacados;
+  return salida;
+}
+
+/* Limpia los catálogos de un estado ya armado. Sirve tanto después de
+   combinar como al abrir el sistema, para arreglar lo que quedó repetido
+   de antes. Devuelve cuántos registros se sacaron. */
+function nubeLimpiarCatalogos(estado){
+  if (!estado) return 0;
+  const enUso = {};
+  (estado.pedidos || []).forEach(p => { if (p && p.estado === 'abierto' && p.mesaId) enUso[p.mesaId] = 1; });
+  const activo = (typeof USUARIO !== 'undefined' && USUARIO) ? USUARIO.id : null;
+  let total = 0;
+  Object.keys(NUBE_CLAVE_NATURAL).forEach(k => {
+    const prefiere = k === 'mesas'    ? (m => !!enUso[m.id])
+                   : k === 'usuarios' ? (u => u.id === activo)
+                   : null;
+    const r = nubeSacarDuplicados(estado[k], NUBE_CLAVE_NATURAL[k], prefiere);
+    total += r.sacados || 0;
+    estado[k] = r;
+  });
+  /* Los elementos del salón no tienen nombre, así que se los separa por tipo:
+
+     - De los que hay UNO SOLO en un café (la barra, la cocina, los baños, la
+       entrada) alcanza con el tipo y el texto. No importa dónde estén: si
+       aparecen dos cocinas, una sobra. Comparar también la posición no
+       servía, porque basta que en una computadora la hayan corrido un poco
+       para que parezcan dos cosas distintas.
+     - De los que puede haber muchos iguales y legítimos (ventanas, paredes,
+       plantas) solo se sacan los que están en el mismo lugar exacto. Dos
+       ventanas en paredes distintas son dos ventanas de verdad.            */
+  const EL_UNICOS = ['barra', 'cocina', 'bano', 'deposito', 'puerta', 'escalera', 'sector'];
+  if (estado.salon && Array.isArray(estado.salon.elementos)){
+    const r = nubeSacarDuplicados(estado.salon.elementos, e =>
+      EL_UNICOS.indexOf(e.tipo) >= 0
+        ? 'el:' + e.tipo + '|' + nubeTextoClave(e.texto)
+        : 'el:' + [e.tipo, nubeTextoClave(e.texto), e.x, e.y, e.w, e.h].join('|'), null);
+    total += r.sacados || 0;
+    estado.salon.elementos = r;
+  }
+  return total;
+}
+
 /* Junta los tres estados y devuelve uno solo */
 function nubeCombinar(base, mio, suyo){
   const cuenta = { choques: 0 };
@@ -293,7 +373,10 @@ function nubeCombinar(base, mio, suyo){
      dos computadoras se estarían subiendo cambios la una a la otra sin fin. */
   const g = (mio.guardado || '') > (suyo.guardado || '') ? mio.guardado : suyo.guardado;
   if (g !== undefined) out.guardado = g;
-  return { estado: out, choques: cuenta.choques };
+  /* Sin referencia previa, combinar por id deja los dos juegos de mesas y
+     productos que cada computadora había armado por su cuenta. */
+  const repetidos = nubeLimpiarCatalogos(out);
+  return { estado: out, choques: cuenta.choques, repetidos: repetidos };
 }
 
 /* Repinta la pantalla, salvo que el usuario esté en el medio de algo:
@@ -311,11 +394,17 @@ function nubeRepintar(){
 
 /* Trae lo que hay en la nube, lo junta con lo de acá y deja el resultado
    en pantalla. Si quedó algo nuestro sin subir, lo programa para subir. */
-function nubeJuntarConLaNube(remoto){
+function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
   remoto = (remoto && Object.keys(remoto).length) ? remoto : null;
   if (!remoto){ nubeBaseEscribir({}); nubeGuardar(300); return; }
   const base = nubeBaseLeer();
-  const res = nubeCombinar(base, S, remoto);
+  /* Cuando esta computadora arrancó en blanco y armó el café de ejemplo, no
+     hay nada suyo que conservar: se toma el de la nube entero. Combinar el
+     ejemplo con el café real dejaba dos juegos de mesas, dos barras y dos
+     veces cada usuario, y se repetía en cada arranque en blanco. */
+  const res = tomarLaNubeSinCombinar
+    ? { estado: JSON.parse(JSON.stringify(remoto)), choques: 0, repetidos: 0 }
+    : nubeCombinar(base, S, remoto);
   nubeBaseEscribir(remoto);                 /* esto es lo que la nube tiene ahora */
   const cambio = nubeFirma(res.estado) !== nubeFirma(S);
   S = res.estado;

@@ -55,6 +55,12 @@ const DEFAULT_STATE = {
 
 let S = null;
 let VIEW = 'mesas';
+/* Se prende cuando esta computadora arrancó en blanco y tuvo que armar el
+   café de ejemplo. Lo mira cargarDesdeNube(): un café de ejemplo no tiene
+   nada que conservar, así que se descarta entero y se toma el de la nube.
+   Sin esto, el ejemplo se sumaba al café real y quedaban dos juegos de
+   mesas y dos veces cada usuario. */
+let SEMBRADO_AHORA = false;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
@@ -72,6 +78,7 @@ function load(){
   }catch(e){ console.warn('No se pudo leer el guardado:', e); }
   S = structuredClone(DEFAULT_STATE);
   if (local()) S.config.nombre = local().nombre;
+  SEMBRADO_AHORA = true;
   seed();
   save();
 }
@@ -96,9 +103,13 @@ async function cargarDesdeNube(){
   if (!remoto){                              /* café vacío en la nube: subir lo de acá */
     nubeBaseEscribir({});
     nubeGuardar();
+    SEMBRADO_AHORA = false;
     return;
   }
-  nubeJuntarConLaNube(remoto);
+  /* Si acá se acaba de armar el café de ejemplo, no se combina: se toma el
+     de la nube tal cual (ver SEMBRADO_AHORA arriba). */
+  nubeJuntarConLaNube(remoto, SEMBRADO_AHORA);
+  SEMBRADO_AHORA = false;
 }
 
 /* Completa los campos del plano en datos guardados con versiones anteriores */
@@ -108,6 +119,10 @@ function migrar(){
   if (!Array.isArray(S.pagosCuenta)) S.pagosCuenta = [];
   if (!Array.isArray(S.movimientos)) S.movimientos = [];
   if (!Array.isArray(S.usuarios) || !S.usuarios.length) S.usuarios = usuariosPorDefecto();
+  /* Lo repetido que haya quedado guardado NO se saca solo al abrir: borrar
+     registros sin que nadie lo pida es peligroso. Se hace a mano desde
+     Ajustes → "Sacar duplicados", que muestra qué va a sacar y pide
+     confirmación. */
   if (!S.usuarios.some(u => u.rol === 'admin' && u.activo)) S.usuarios.push(usuariosPorDefecto()[0]);
   S.pedidos.forEach(p => {
     if (p.pago === 'mp') p.pago = 'qr';

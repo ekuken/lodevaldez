@@ -4,6 +4,80 @@
 
 let CAJA = { fecha: hoy() };
 
+/* ============================================================
+   TURNOS
+   ------------------------------------------------------------
+   La caja se puede cerrar más de una vez por día: mañana y tarde,
+   o las veces que haga falta. Cada cierre abarca desde el cierre
+   anterior hasta el momento en que se hace, que es lo que pasa de
+   verdad cuando alguien cuenta la caja y se la entrega al que
+   sigue. Así no hay que configurar ningún horario de corte y el
+   día que cierran antes o después, sale bien igual.
+   ============================================================ */
+
+function msDe(iso){ const t = iso ? new Date(iso).getTime() : NaN; return isNaN(t) ? 0 : t; }
+
+/* Todos los turnos de un día: los que ya se cerraron, más el que está
+   abierto (el último, que va desde el cierre anterior hasta ahora). */
+function turnosDelDia(f){
+  const cerrados = S.cierres.filter(c => c.fecha === f)
+    .slice().sort((a, b) => msDe(a.hasta) - msDe(b.hasta));
+  const out = [];
+  let desde = new Date(f + 'T00:00:00').getTime();
+  cerrados.forEach((c, i) => {
+    out.push({ nombre: c.turno || ('Turno ' + (i + 1)), desde: desde, hasta: msDe(c.hasta),
+               primero: i === 0, cierre: c });
+    desde = msDe(c.hasta);
+  });
+  out.push({ nombre: null, desde: desde, hasta: null, primero: !cerrados.length, cierre: null });
+  return out;
+}
+function turnoAbierto(f){ const t = turnosDelDia(f); return t[t.length - 1]; }
+
+function enTurno(iso, t){
+  const x = msDe(iso);
+  if (!x) return false;
+  if (t.desde && x < t.desde) return false;
+  if (t.hasta && x >= t.hasta) return false;
+  return true;
+}
+/* Los gastos, compras y cobros se cargan a mano y llevan la fecha que quiera
+   quien los carga. Para saber a qué turno pertenecen se usa la hora en que
+   se cargaron. Si se cargaron otro día (porque la fecha se puso a mano),
+   caen en el primer turno, para que no queden afuera de todos. */
+function enTurnoManual(creado, f, t){
+  if (!creado || String(creado).slice(0, 10) !== f) return !!t.primero;
+  return enTurno(creado, t);
+}
+
+function nombreTurnoSugerido(){
+  const h = new Date().getHours();
+  return h < 15 ? 'Mañana' : h < 21 ? 'Tarde' : 'Noche';
+}
+
+/* Los números de un turno: solo lo que pasó dentro de su rango */
+function numerosTurno(f, t){
+  const pedidos = S.pedidos.filter(p => p.estado === 'cerrado' && dkey(p.cerrado) === f && enTurno(p.cerrado, t));
+  const cobros  = S.pagosCuenta.filter(x => x.fecha === f && enTurnoManual(x.creado, f, t));
+  const movs    = S.movimientos.filter(m => m.fecha === f && enTurnoManual(m.creado, f, t));
+  const compras = S.compras.filter(c => c.fecha === f && enTurnoManual(c.creado, f, t));
+  const porPago = {};
+  pedidos.forEach(p => { const m = porMedio(p); Object.keys(m).forEach(k => porPago[k] = redondear((porPago[k] || 0) + m[k])); });
+  const efectivo   = redondear(porPago.efectivo || 0);
+  const cobrosEfe  = redondear(cobros.filter(x => x.medio === 'efectivo').reduce((a, x) => a + x.monto, 0));
+  const extraEfe   = redondear(movs.filter(m => m.tipo === 'ingreso' && m.medio === 'efectivo').reduce((a, m) => a + m.monto, 0));
+  const gastosEfe  = redondear(movs.filter(m => m.tipo !== 'ingreso' && m.medio === 'efectivo').reduce((a, m) => a + m.monto, 0));
+  const comprasEfe = redondear(compras.filter(c => c.pago === 'efectivo').reduce((a, c) => a + c.total, 0));
+  return {
+    pedidos: pedidos, porPago: porPago,
+    ventas: redondear(pedidos.reduce((a, p) => a + totalCobrado(p), 0)),
+    efectivo: efectivo, cobrosEfe: cobrosEfe, extraEfe: extraEfe,
+    gastosEfe: gastosEfe, comprasEfe: comprasEfe,
+    entra: redondear(efectivo + cobrosEfe + extraEfe),
+    sale: redondear(comprasEfe + gastosEfe)
+  };
+}
+
 function moverDia(d){
   const x = new Date(CAJA.fecha + 'T12:00:00');
   x.setDate(x.getDate() + d);

@@ -57,6 +57,7 @@ function renderAjustes(){
       '<button class="btn" onclick="document.getElementById(\'impFile\').click()">⬆ Restaurar respaldo</button>' +
       '<input type="file" id="impFile" accept=".json,application/json" class="hide" onchange="importarBackup(this)">' +
     '</div>' +
+    htmlDuplicados() +
     '<div class="sep"></div>' +
     htmlNube() +
     '<div class="sep"></div>' +
@@ -161,6 +162,74 @@ function borrarTodo(){
     S = structuredClone(DEFAULT_STATE); seed(); save();
     closeModal(); go('mesas'); toast('Datos borrados — sistema reiniciado');
   }, 'Sí, borrar todo');
+}
+
+/* ---------- Duplicados ----------
+   Aparecían cuando una computadora arrancaba sin datos: armaba el café de
+   ejemplo y se sumaba al de la nube, dejando dos juegos de mesas y dos veces
+   cada usuario. Eso ya no pasa más, pero lo que quedó guardado se saca desde
+   acá: a mano, mostrando antes qué se va a sacar y pidiendo confirmación.
+   Nunca solo, porque borra registros.                                      */
+function contarDuplicados(){
+  if (typeof nubeLimpiarCatalogos !== 'function') return null;
+  const copia = JSON.parse(JSON.stringify({
+    mesas: S.mesas, productos: S.productos, proveedores: S.proveedores,
+    cuentas: S.cuentas, usuarios: S.usuarios,
+    salon: { elementos: S.salon.elementos }, pedidos: S.pedidos
+  }));
+  const antes = { mesas: copia.mesas.length, productos: copia.productos.length,
+                  proveedores: copia.proveedores.length, cuentas: copia.cuentas.length,
+                  usuarios: copia.usuarios.length, elementos: copia.salon.elementos.length };
+  nubeLimpiarCatalogos(copia);
+  return {
+    mesas: antes.mesas - copia.mesas.length,
+    productos: antes.productos - copia.productos.length,
+    proveedores: antes.proveedores - copia.proveedores.length,
+    cuentas: antes.cuentas - copia.cuentas.length,
+    usuarios: antes.usuarios - copia.usuarios.length,
+    elementos: antes.elementos - copia.salon.elementos.length
+  };
+}
+
+const NOMBRES_DUP = { mesas: 'mesas', productos: 'productos', proveedores: 'proveedores',
+                      cuentas: 'cuentas corrientes', usuarios: 'usuarios',
+                      elementos: 'elementos del salón (barra, cocina, baños…)' };
+
+function htmlDuplicados(){
+  const d = contarDuplicados();
+  if (!d) return '';
+  const total = Object.keys(d).reduce((a, k) => a + d[k], 0);
+  if (!total) return '';
+  return '<div class="alert warn" style="margin-top:14px"><span>⚠</span><div>' +
+    '<b>Hay ' + total + ' registro(s) repetidos.</b> Quedaron de cuando una computadora ' +
+    'arrancaba en blanco y su café de ejemplo se sumaba al de verdad: ' +
+    Object.keys(d).filter(k => d[k] > 0).map(k => d[k] + ' ' + NOMBRES_DUP[k]).join(', ') + '.' +
+    '<div style="margin-top:9px"><button class="btn sm dan" onclick="sacarDuplicados()">Sacar los repetidos</button></div>' +
+    '</div></div>';
+}
+
+function sacarDuplicados(){
+  if (!soloAdmin('limpiar los repetidos')) return;
+  const d = contarDuplicados();
+  const total = d ? Object.keys(d).reduce((a, k) => a + d[k], 0) : 0;
+  if (!total) return toast('No hay repetidos: está todo limpio');
+  confirmar(
+    'Se van a sacar:<ul style="margin:8px 0 0 18px;line-height:1.6">' +
+      Object.keys(d).filter(k => d[k] > 0).map(k => '<li><b>' + d[k] + '</b> ' + NOMBRES_DUP[k] + '</li>').join('') +
+    '</ul>' +
+    '<p style="margin:12px 0 0;line-height:1.55">De cada repetido queda <b>uno solo</b>: el que tiene una ' +
+    'cuenta abierta o el usuario con el que estás trabajando; si no, el primero.</p>' +
+    '<p style="margin:8px 0 0;line-height:1.55"><b>Descargá el respaldo antes de seguir.</b> Esto no se puede deshacer.</p>',
+    () => {
+      const n = nubeLimpiarCatalogos(S);
+      /* Si el usuario con el que se está trabajando era uno de los repetidos,
+         se lo vuelve a apuntar al que quedó. */
+      if (USUARIO && !S.usuarios.some(u => u.id === USUARIO.id))
+        USUARIO = S.usuarios.find(u => u.nombre === USUARIO.nombre) ||
+                  S.usuarios.find(u => u.rol === 'admin' && u.activo) || USUARIO;
+      save(); closeModal(); refresh();
+      toast('Se sacaron ' + n + ' registro(s) repetidos');
+    }, 'Sí, sacar los repetidos');
 }
 
 /* ---------- Estado de la nube dentro de Ajustes ---------- */
