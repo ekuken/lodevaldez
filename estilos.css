@@ -266,6 +266,11 @@ tbody tr:hover{background:var(--panel-2)}
 .pays{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin:10px 0}
 .pays button{border:1px solid var(--line);background:#fff;padding:7px 4px;border-radius:9px;cursor:pointer;font-size:12.5px;font-weight:600}
 .pays button.on{background:var(--ok);border-color:var(--ok);color:#fff}
+/* Al cobrar, los medios se muestran grandes: es el momento de elegir y se
+   toca apurado, muchas veces con el cliente esperando adelante. */
+.pays.grande{grid-template-columns:repeat(2,1fr);gap:8px}
+.pays.grande button{padding:16px 8px;font-size:15px;border-radius:11px}
+.pays.grande button:hover{border-color:var(--ok);color:var(--ok)}
 
 /* ---------- misc ---------- */
 .bar{height:7px;background:var(--brand-soft);border-radius:4px;overflow:hidden;min-width:60px}

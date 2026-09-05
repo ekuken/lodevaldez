@@ -473,11 +473,13 @@ function nuevoMostrador(){ abrirPedido(nuevoPedido('mostrador', null).id); }
 /* ------------------------------------------------------------
    Punto de venta
    ------------------------------------------------------------ */
-let POS = { id: null, cat: 'Todas', q: '', nota: -1, split: false, lineas: [], paga: 0 };
+let POS = { id: null, cat: 'Todas', q: '', nota: -1, split: false, lineas: [], paga: 0,
+            cobrando: false, medio: null, cuentaId: null };
 
 function abrirPedido(id){
   const p = S.pedidos.find(x => x.id === id); if (!p) return;
-  POS = { id: id, cat: 'Todas', q: '', nota: -1, split: false, lineas: [], paga: 0 };
+  POS = { id: id, cat: 'Todas', q: '', nota: -1, split: false, lineas: [], paga: 0,
+          cobrando: false, medio: null, cuentaId: null };
   const m = p.mesaId ? mesa(p.mesaId) : null;
   const tit = (p.tipo === 'mesa' ? 'Mesa ' + p.mesaNum + (m && m.zona ? ' · ' + esc(m.zona) : '') : 'Para llevar') +
               ' <span class="pill gray" style="margin-left:6px">Pedido #' + p.num + '</span>' +
@@ -571,7 +573,6 @@ function pintarCart(){
   if (POS.nota >= 0){ const n = $('#notaIn'); if (n){ n.focus(); n.select(); } }
 
   const st = subtotal(p), tt = total(p);
-  const rec = recargoDe(p), aCobrar = totalCobrado(p);
   f.innerHTML =
     '<div class="tot-row"><span class="muted">Subtotal</span><b class="mono">' + fmt(st) + '</b></div>' +
     (cerrado
@@ -600,7 +601,10 @@ function pintarCart(){
         '<div class="tot-row small" style="color:var(--ink-2);font-weight:650"><span>Total con propina</span>' +
         '<span class="mono">' + fmt(total(p) + propinaDe(p)) + '</span></div>'
       : '') +
-    (cerrado ? htmlPagoCerrado(p) : POS.split ? htmlSplit(p) : htmlCobroSimple(p, rec, aCobrar));
+    (cerrado ? htmlPagoCerrado(p)
+     : POS.split ? htmlSplit(p)
+     : POS.cobrando ? (POS.medio ? htmlConfirmarPago(p) : htmlElegirMedio(p))
+     : htmlAntesDeCobrar(p));
 }
 
 /* ---------- Pedido ya cerrado ---------- */
@@ -621,19 +625,117 @@ function htmlPagoCerrado(p){
     '<button class="btn blk" style="margin-top:10px" onclick="imprimirTicket(\'' + p.id + '\')">🖨 Imprimir ticket</button>';
 }
 
-/* ---------- Cobro con un solo medio ---------- */
-function htmlCobroSimple(p, rec, aCobrar){
-  const vuelto = POS.paga - aCobrar;
-  return '<div class="pays">' + Object.keys(PAGOS).map(k =>
-      '<button class="' + (p.pago === k ? 'on' : '') + '" onclick="setPago(\'' + k + '\')">' + PAGOS[k] + '</button>').join('') +
+/* ---------- Cobro en dos pasos ----------
+   Antes los medios de pago estaban siempre a la vista y el botón de cobrar
+   tomaba el que estuviera marcado; si no había ninguno, cobraba en efectivo
+   sin que nadie lo hubiera elegido. Ahora primero se aprieta Cobrar y recién
+   ahí se elige con qué paga, que es el orden en que pasa en el mostrador. */
+
+/* Paso 0: la pantalla normal del carrito */
+function htmlAntesDeCobrar(p){
+  return htmlBotonComanda(p) +
+    '<button class="btn ok blk" style="margin-top:4px;font-size:16px;padding:12px" onclick="iniciarCobro()"' +
+      (p.items.length ? '' : ' disabled') + '>💵 Cobrar ' + fmt(total(p)) + '</button>' +
+    '<div class="row" style="margin-top:8px;flex-wrap:nowrap;gap:6px">' +
+      '<button class="btn sm grow" onclick="cerrarPOS()">Guardar y salir</button>' +
+      '<button class="btn sm" onclick="moverPedido()" title="Pasar esta cuenta a otra mesa">⇄ Mover</button>' +
+      '<button class="btn sm dan" onclick="anularPedido()">Anular</button>' +
+    '</div>';
+}
+
+/* ---------- Mover la cuenta a otra mesa ----------
+   Se sientan en la 4 y se pasan a la 7, o la mesa de adentro se va a la
+   vereda. Antes la única salida era anular y cargar todo de nuevo, que
+   además ensuciaba el historial con anulaciones que no fueron ventas
+   caídas. Se puede mover con el pedido ya tomado y hasta con la comanda
+   impresa: lo que se preparó no cambia, cambia dónde se cobra.          */
+function moverPedido(){
+  const p = pedidoPOS(); if (!p) return;
+  if (p.estado !== 'abierto') return toast('Solo se puede mover una cuenta abierta');
+  const libres = S.mesas.slice().sort((a, b) => a.num - b.num)
+    .filter(m => m.id !== p.mesaId && !pedidoAbiertoDeMesa(m.id));
+  const origen = p.tipo === 'mesa' ? 'Mesa ' + p.mesaNum : 'Para llevar';
+  modal({
+    nofocus: true,
+    title: '⇄ Mover el pedido #' + p.num,
+    body:
+      '<div class="small muted" style="margin-bottom:12px">Ahora está en <b>' + esc(origen) + '</b>, con ' +
+        p.items.length + ' ítem(s) por <b>' + fmt(total(p)) + '</b>. Elegí a dónde pasa.</div>' +
+      (libres.length
+        ? '<div class="pax-grid">' + libres.map(m =>
+            '<button class="pax" onclick="confirmarMover(\'' + p.id + '\',\'' + m.id + '\')" title="Mesa ' + m.num +
+            ' · ' + (m.cap || 4) + ' personas' + (m.zona ? ' · ' + esc(m.zona) : '') + '">' + m.num + '</button>').join('') +
+          '</div>'
+        : '<div class="alert warn small"><span>⚠</span><div>No hay ninguna mesa libre: todas tienen una cuenta abierta.</div></div>') +
+      (p.tipo === 'mesa'
+        ? '<button class="btn blk sm" style="margin-top:14px" onclick="confirmarMover(\'' + p.id + '\',\'mostrador\')">🥡 Pasarlo a “Para llevar”</button>'
+        : '') +
+      '<div class="small muted" style="margin-top:14px;line-height:1.5">Las mesas ocupadas no aparecen en la lista: ' +
+        'para juntar dos cuentas en una hay que cobrar una de las dos primero.</div>',
+    footer: '<button class="btn" onclick="abrirPedido(\'' + p.id + '\')">← Volver al pedido</button>'
+  });
+}
+
+function confirmarMover(pid, destino){
+  const p = S.pedidos.find(x => x.id === pid); if (!p) return;
+  if (p.estado !== 'abierto') return toast('Solo se puede mover una cuenta abierta');
+  const desde = p.tipo === 'mesa' ? 'Mesa ' + p.mesaNum : 'Para llevar';
+  let hasta;
+  if (destino === 'mostrador'){
+    p.tipo = 'mostrador'; p.mesaId = null; p.mesaNum = null;
+    hasta = 'Para llevar';
+  } else {
+    const m = mesa(destino); if (!m) return;
+    /* Se vuelve a chequear acá: entre que se abrió la lista y se tocó la
+       mesa, la otra computadora pudo haber abierto una cuenta ahí. */
+    if (pedidoAbiertoDeMesa(m.id)) return toast('La mesa ' + m.num + ' ya tiene una cuenta abierta');
+    p.tipo = 'mesa'; p.mesaId = m.id; p.mesaNum = m.num;
+    hasta = 'Mesa ' + m.num;
+  }
+  if (!Array.isArray(p.mudanzas)) p.mudanzas = [];
+  p.mudanzas.push({ de: desde, a: hasta, cuando: new Date().toISOString(),
+                    por: USUARIO ? USUARIO.nombre : '' });
+  save(); closeModal(); refresh();
+  toast('Pedido #' + p.num + ': ' + desde + ' → ' + hasta);
+}
+
+/* Paso 1: ¿con qué paga? */
+function htmlElegirMedio(p){
+  return '<div class="sep"></div>' +
+    '<div class="row" style="justify-content:space-between;margin-bottom:4px;flex-wrap:nowrap">' +
+      '<b>¿Cómo paga los ' + fmt(total(p)) + '?</b>' +
+      '<button class="btn xs" onclick="cancelarCobro()">← Volver</button></div>' +
+    '<div class="pays grande">' + Object.keys(PAGOS).map(k =>
+      '<button onclick="elegirMedio(\'' + k + '\')">' + PAGOS[k] + '</button>').join('') +
     '</div>' +
-    (p.pago === 'cuenta'
+    '<button class="btn blk sm" onclick="abrirSplit()">🧮 Dividir entre varias formas de pago</button>';
+}
+
+/* La forma de pago que se está por confirmar, todavía sin guardar en el
+   pedido: así el recargo y el vuelto se calculan igual que si ya estuviera. */
+function lineaEnCurso(p){
+  return { medio: POS.medio, base: total(p), cuentaId: POS.cuentaId || null };
+}
+
+/* Paso 2: confirmar. Acá aparecen el recargo del crédito, la cuenta a la que
+   se carga o el cálculo del vuelto, según con qué paguen. */
+function htmlConfirmarPago(p){
+  const l = lineaEnCurso(p);
+  const rec = recargoLinea(l);
+  const aCobrar = cobradoLinea(l);
+  const vuelto = POS.paga - aCobrar;
+  const faltaCuenta = POS.medio === 'cuenta' && !POS.cuentaId;
+  return '<div class="sep"></div>' +
+    '<div class="row" style="justify-content:space-between;margin-bottom:6px;flex-wrap:nowrap">' +
+      '<b>Paga con ' + PAGOS[POS.medio] + '</b>' +
+      '<button class="btn xs" onclick="volverAMedios()">← Cambiar</button></div>' +
+    (POS.medio === 'cuenta'
       ? '<div class="field" style="margin:2px 0 8px">' +
           '<label>¿A qué cuenta se carga?</label>' +
-          '<select onchange="setCuenta(this.value)">' +
+          '<select onchange="setCuentaCobro(this.value)">' +
             '<option value="">— elegir cuenta —</option>' +
             S.cuentas.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(c =>
-              '<option value="' + c.id + '" ' + (p.cuentaId === c.id ? 'selected' : '') + '>' + esc(c.nombre) +
+              '<option value="' + c.id + '" ' + (POS.cuentaId === c.id ? 'selected' : '') + '>' + esc(c.nombre) +
               (saldoCuenta(c.id) > 0 ? ' · debe ' + fmt(saldoCuenta(c.id)) : '') + '</option>').join('') +
           '</select>' +
           (esAdmin() ? '<button class="btn xs" style="margin-top:6px" onclick="closeModal();go(\'cuentas\')">＋ Crear una cuenta nueva</button>' : '') +
@@ -644,7 +746,7 @@ function htmlCobroSimple(p, rec, aCobrar){
         '<span class="mono">+ ' + fmt(rec) + '</span></div>' +
         '<div class="tot-row" style="font-weight:700"><span>Total a cobrar</span><span class="mono">' + fmt(aCobrar) + '</span></div>'
       : '') +
-    (p.pago === 'efectivo'
+    (POS.medio === 'efectivo'
       ? '<div class="tot-row"><span class="muted small">Paga con</span>' +
           '<input type="number" min="0" step="any" value="' + (POS.paga || '') + '" placeholder="0" ' +
           'style="width:110px;text-align:right;padding:4px 8px" onchange="setPaga(this.value)"></div>' +
@@ -658,12 +760,42 @@ function htmlCobroSimple(p, rec, aCobrar){
           '<button class="btn xs" onclick="setPaga(0)">×</button></div>'
       : '') +
     htmlBotonComanda(p) +
-    '<button class="btn ok blk" style="margin-top:4px" onclick="cobrar()"' + (p.items.length ? '' : ' disabled') + '>💵 Cobrar ' + fmt(aCobrar) + '</button>' +
-    '<button class="btn blk" style="margin-top:6px" onclick="abrirSplit()"' + (p.items.length ? '' : ' disabled') + '>🧮 Pago mixto / dividir la cuenta</button>' +
-    '<div class="row" style="margin-top:8px;flex-wrap:nowrap">' +
-      '<button class="btn sm grow" onclick="cerrarPOS()">Guardar y salir</button>' +
-      '<button class="btn sm dan" onclick="anularPedido()">Anular</button>' +
-    '</div>';
+    '<button class="btn ok blk" style="margin-top:4px;font-size:16px;padding:12px" onclick="confirmarCobro()"' +
+      (faltaCuenta ? ' disabled' : '') + '>✓ Cobrar ' + fmt(aCobrar) + '</button>' +
+    '<button class="btn blk sm" style="margin-top:6px" onclick="cancelarCobro()">Cancelar el cobro</button>';
+}
+
+function iniciarCobro(){
+  const p = pedidoPOS(); if (!p) return;
+  if (!p.items.length) return toast('Cargá algo al pedido antes de cobrar');
+  POS.cobrando = true; POS.medio = null; POS.cuentaId = null; POS.paga = 0;
+  pintarCart();
+}
+function elegirMedio(k){
+  if (k === 'cuenta' && !S.cuentas.length){
+    toast('Todavía no hay cuentas corrientes creadas');
+    if (esAdmin()){ closeModal(); go('cuentas'); }
+    return;
+  }
+  POS.medio = k; POS.paga = 0;
+  /* Si hay una sola cuenta, se elige sola: un toque menos */
+  POS.cuentaId = (k === 'cuenta' && S.cuentas.length === 1) ? S.cuentas[0].id : null;
+  pintarCart();
+}
+function volverAMedios(){ POS.medio = null; POS.cuentaId = null; POS.paga = 0; pintarCart(); }
+function cancelarCobro(){ POS.cobrando = false; POS.medio = null; POS.cuentaId = null; POS.paga = 0; pintarCart(); }
+function setCuentaCobro(id){ POS.cuentaId = id || null; pintarCart(); }
+
+function confirmarCobro(){
+  const p = pedidoPOS(); if (!p || !p.items.length) return;
+  if (!POS.medio) return toast('Elegí con qué paga');
+  if (POS.medio === 'cuenta' && !POS.cuentaId) return toast('Elegí a qué cuenta se carga el consumo');
+  const l = lineaEnCurso(p);
+  if (POS.medio === 'efectivo' && POS.paga > 0){
+    if (POS.paga < cobradoLinea(l)) return toast('El efectivo recibido es menor al total');
+    l.recibido = POS.paga; l.vuelto = redondear(POS.paga - cobradoLinea(l));
+  }
+  finalizarCobro(p, [l]);
 }
 
 /* Botón del ticket: cambia según haya ítems sin imprimir */
@@ -732,7 +864,7 @@ function htmlSplit(p){
 
 function abrirSplit(){
   const p = pedidoPOS(); if (!p || !p.items.length) return;
-  POS.split = true;
+  POS.split = true; POS.cobrando = false; POS.medio = null;
   POS.lineas = [{ medio: 'efectivo', base: total(p), cuentaId: null }];
   pintarCart();
 }
@@ -786,13 +918,9 @@ function setDescTipo(t){
   p.descTipo = t; p.descVal = 0;
   aplicarDescuento(p); save(); pintarCart();
 }
-function setPago(k){
-  const p = pedidoPOS(); if (!p) return;
-  p.pago = (p.pago === k ? null : k);
-  if (p.pago !== 'cuenta') p.cuentaId = null;
-  save(); pintarCart();
-}
-function setCuenta(id){ const p = pedidoPOS(); if (!p) return; p.cuentaId = id || null; save(); pintarCart(); }
+/* El medio de pago ya no se preselecciona ni se guarda en el pedido antes de
+   cobrar: se elige en el momento (ver htmlElegirMedio) y se escribe recién
+   al confirmar, en finalizarCobro(). */
 
 function cerrarPOS(){
   const p = pedidoPOS();
@@ -833,21 +961,6 @@ function enviarComanda(){
   imprimirPedido(p, nuevos, reimprime);
 }
 
-function cobrar(){
-  const p = pedidoPOS(); if (!p || !p.items.length) return;
-  if (!p.pago) p.pago = 'efectivo';
-  if (p.pago === 'cuenta'){
-    if (!S.cuentas.length){ closeModal(); if (esAdmin()) go('cuentas'); return toast('Creá primero la cuenta a la que se carga'); }
-    if (!p.cuentaId) return toast('Elegí a qué cuenta se carga el consumo');
-  }
-  const l = { medio: p.pago, base: total(p), cuentaId: p.pago === 'cuenta' ? p.cuentaId : null };
-  if (p.pago === 'efectivo' && POS.paga > 0){
-    if (POS.paga < totalCobrado(p)) return toast('El efectivo recibido es menor al total');
-    l.recibido = POS.paga; l.vuelto = redondear(POS.paga - totalCobrado(p));
-  }
-  finalizarCobro(p, [l]);
-}
-
 function finalizarCobro(p, lineas){
   p.pagos = lineas.map(l => ({
     medio: l.medio, base: redondear(l.base), cuentaId: l.cuentaId || null,
@@ -862,31 +975,13 @@ function finalizarCobro(p, lineas){
   p.cobradoPor = USUARIO ? USUARIO.nombre : '';
   const vuelto = p.pagos.reduce((a, l) => a + (l.vuelto || 0), 0);
   POS.split = false; POS.paga = 0; POS.lineas = [];
+  POS.cobrando = false; POS.medio = null; POS.cuentaId = null;
   save(); closeModal(); refresh();
-  modal({
-    title: '✓ Pedido cobrado', nofocus: true,
-    body: '<div style="text-align:center;padding:6px 0">' +
-      '<div style="font-size:34px;font-weight:700;letter-spacing:-.02em">' + fmt(totalCobrado(p)) + '</div>' +
-      '<div class="muted small" style="margin-top:4px">Pedido #' + p.num + ' · ' + textoPago(p) +
-        (p.cuentaId && cuenta(p.cuentaId) ? ' — ' + esc(cuenta(p.cuentaId).nombre) : '') +
-        (p.tipo === 'mesa' ? ' · Mesa ' + p.mesaNum : ' · Para llevar') + '</div></div>' +
-      (esMixto(p)
-        ? '<div class="sep"></div>' + p.pagos.map(l =>
-            '<div class="tot-row"><span class="muted">' + nombrePago(l.medio) +
-            (l.cuentaId && cuenta(l.cuentaId) ? ' · ' + esc(cuenta(l.cuentaId).nombre) : '') + '</span>' +
-            '<b class="mono">' + fmt(cobradoLinea(l)) + '</b></div>').join('')
-        : '') +
-      (recargoDe(p) > 0
-        ? '<div class="tot-row small" style="color:var(--warn)"><span>Incluye recargo de crédito</span>' +
-          '<span class="mono">' + fmt(recargoDe(p)) + '</span></div>'
-        : '') +
-      (vuelto > 0
-        ? '<div class="alert info" style="margin-top:12px;font-size:17px;justify-content:center">' +
-          '<span>💵</span><div><b>Vuelto: ' + fmt(vuelto) + '</b></div></div>'
-        : ''),
-    footer: '<button class="btn" data-close>Listo</button>' +
-            '<button class="btn pri" onclick="imprimirTicket(\'' + p.id + '\')">🖨 Imprimir ticket</button>'
-  });
+  /* Antes acá se abría un cartel de "Pedido cobrado" con los botones Listo e
+     Imprimir ticket. En el mostrador es un toque de más en cada cobro y la
+     mesa ya quedó libre atrás. Queda solo el aviso, que se va solo; el
+     ticket se imprime desde Pedidos cuando hace falta. */
+  toast('✓ Cobrado ' + fmt(totalCobrado(p)) + (vuelto > 0 ? ' · Vuelto ' + fmt(vuelto) : ''));
 }
 
 function descontarStock(p, signo){
