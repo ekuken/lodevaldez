@@ -159,6 +159,7 @@ function rangoTexto(){
 function verPedido(id){
   const p = S.pedidos.find(x => x.id === id); if (!p) return;
   if (p.estado === 'abierto') return abrirPedido(id);
+  EDPAGO = { id: null, medio: null, cuentaId: null };   /* corrección a medias: se descarta */
   modal({
     size: '', nofocus: true,
     title: 'Pedido #' + p.num + ' <span class="pill ' + (p.estado === 'cerrado' ? 'ok' : 'bad') + '">' + cap(p.estado) + '</span>',
@@ -168,6 +169,8 @@ function verPedido(id){
         '<span>' + (p.tipo === 'mesa' ? '🍽 Mesa ' + p.mesaNum : '🥡 Para llevar') + '</span>' +
         '<span>💳 ' + textoPago(p) + (p.cuentaId && cuenta(p.cuentaId) ? ' — ' + esc(cuenta(p.cuentaId).nombre) : '') + '</span>' +
         (p.mozoNombre ? '<span>🧑‍🍳 ' + esc(p.mozoNombre) + '</span>' : '') +
+        /* Se guardaba en cada cobro y no se mostraba en ningún lado */
+        (p.cobradoPor && p.cobradoPor !== p.mozoNombre ? '<span>💵 Cobró ' + esc(p.cobradoPor) + '</span>' : '') +
       '</div>' +
       '<table><thead><tr><th>Producto</th><th class="num">Cant.</th><th class="num">Precio</th><th class="num">Importe</th></tr></thead><tbody>' +
       p.items.map(i => '<tr><td>' + esc(i.nombre) + (i.nota ? '<div class="small muted">📝 ' + esc(i.nota) + '</div>' : '') + '</td>' +
@@ -190,14 +193,117 @@ function verPedido(id){
       (propinaDe(p) > 0
         ? '<div class="tot-row small muted"><span>Propina sugerida (' + S.config.propina + '%)</span><span>' + fmt(propinaDe(p)) + '</span></div>' +
           '<div class="tot-row small" style="font-weight:650"><span>Total con propina</span><span>' + fmt(totalConPropina(p)) + '</span></div>'
+        : '') +
+      (Array.isArray(p.mudanzas) && p.mudanzas.length
+        ? '<div class="alert info small" style="margin-top:12px"><span>⇄</span><div>' +
+          p.mudanzas.map(x => 'Se movió de <b>' + esc(x.de) + '</b> a <b>' + esc(x.a) + '</b> a las ' +
+            hora(x.cuando) + (x.por ? ', por ' + esc(x.por) : '') + '.').join('<br>') +
+          '</div></div>'
+        : '') +
+      (p.pagoEditado
+        ? '<div class="alert info small" style="margin-top:12px"><span>💳</span><div>La forma de pago se corrigió el ' +
+          fechaCorta(p.pagoEditado.cuando) + ' a las ' + hora(p.pagoEditado.cuando) +
+          (p.pagoEditado.por ? ' por <b>' + esc(p.pagoEditado.por) + '</b>' : '') +
+          '. Antes figuraba como <b>' + esc(p.pagoEditado.antes) + '</b>.</div></div>'
         : ''),
     footer:
       (p.estado === 'cerrado' && esAdmin()
-        ? '<button class="btn dan" onclick="anularCobrado(\'' + p.id + '\')">Anular pedido</button>'
+        ? '<button class="btn dan" onclick="anularCobrado(\'' + p.id + '\')">Anular pedido</button>' +
+          '<button class="btn" onclick="formPagoPedido(\'' + p.id + '\')">💳 Cambiar forma de pago</button>'
         : '') +
       '<button class="btn" data-close>Cerrar</button>' +
       '<button class="btn pri" onclick="imprimirTicket(\'' + p.id + '\')">🖨 Ticket</button>'
   });
+}
+
+/* ---------- Corregir la forma de pago de un pedido ya cobrado ----------
+   Pasa seguido: se cobró como efectivo y en realidad fue transferencia. Sin
+   esto la única salida era anular y volver a cargar todo el pedido, y el
+   historial quedaba lleno de anulaciones que en realidad fueron tipeos.
+   Queda anotado quién lo cambió y qué decía antes.                        */
+let EDPAGO = { id: null, medio: null, cuentaId: null };
+
+function formPagoPedido(id){
+  if (!soloAdmin('cambiar la forma de pago')) return;
+  const p = S.pedidos.find(x => x.id === id); if (!p) return;
+  if (p.estado !== 'cerrado') return toast('Solo se puede cambiar en un pedido cobrado');
+  /* La primera vez se arranca con lo que tiene el pedido */
+  if (EDPAGO.id !== id){
+    const l = lineasPago(p);
+    EDPAGO = { id: id, medio: l.length === 1 ? l[0].medio : null, cuentaId: p.cuentaId || null };
+  }
+  const provisorio = { medio: EDPAGO.medio, base: total(p), cuentaId: EDPAGO.cuentaId };
+  const rec = EDPAGO.medio ? recargoLinea(provisorio) : 0;
+  const nuevo = EDPAGO.medio ? cobradoLinea(provisorio) : total(p);
+  modal({
+    title: 'Forma de pago del pedido #' + p.num,
+    nofocus: true,
+    body:
+      '<div class="tot-row"><span class="muted">Cobrado hasta ahora como</span>' +
+        '<b>' + textoPago(p) + (p.cuentaId && cuenta(p.cuentaId) ? ' · ' + esc(cuenta(p.cuentaId).nombre) : '') + '</b></div>' +
+      '<div class="tot-row"><span class="muted">Total del pedido</span><b class="mono">' + fmt(total(p)) + '</b></div>' +
+      (esMixto(p)
+        ? '<div class="alert warn small" style="margin-top:10px"><span>⚠</span><div>Este pedido se cobró ' +
+          '<b>repartido entre varias formas de pago</b>. Si elegís una, queda esa sola por el total.</div></div>'
+        : '') +
+      '<div class="sep"></div>' +
+      '<div class="small muted" style="margin-bottom:6px">¿Con qué se pagó en realidad?</div>' +
+      '<div class="pays grande">' + Object.keys(PAGOS).map(k =>
+        '<button class="' + (EDPAGO.medio === k ? 'on' : '') + '" onclick="setPagoPedido(\'' + p.id + '\',\'' + k + '\')">' +
+        PAGOS[k] + '</button>').join('') + '</div>' +
+      (EDPAGO.medio === 'cuenta'
+        ? '<div class="field" style="margin-top:8px"><label>¿A qué cuenta se carga?</label>' +
+            '<select onchange="setCuentaPedido(\'' + p.id + '\',this.value)">' +
+              '<option value="">— elegir cuenta —</option>' +
+              S.cuentas.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es')).map(c =>
+                '<option value="' + c.id + '" ' + (EDPAGO.cuentaId === c.id ? 'selected' : '') + '>' + esc(c.nombre) + '</option>').join('') +
+            '</select></div>'
+        : '') +
+      (rec > 0
+        ? '<div class="tot-row small" style="color:var(--warn);margin-top:8px"><span>Recargo crédito (' +
+          S.config.recargoCredito + '%)</span><span class="mono">+ ' + fmt(rec) + '</span></div>'
+        : '') +
+      (EDPAGO.medio
+        ? '<div class="tot-row" style="font-weight:700;margin-top:6px"><span>Queda cobrado</span>' +
+          '<span class="mono">' + fmt(nuevo) + '</span></div>' +
+          (Math.abs(nuevo - totalCobrado(p)) > 0.004
+            ? '<div class="small muted">Antes figuraba ' + fmt(totalCobrado(p)) + ': cambia por el recargo de crédito.</div>'
+            : '')
+        : '') +
+      (p.pagoEditado
+        ? '<div class="small muted" style="margin-top:10px">Ya se había corregido el ' +
+          fechaCorta(p.pagoEditado.cuando) + ' ' + hora(p.pagoEditado.cuando) +
+          ' por ' + esc(p.pagoEditado.por || '—') + ' (antes: ' + esc(p.pagoEditado.antes) + ').</div>'
+        : ''),
+    footer: '<button class="btn" onclick="verPedido(\'' + p.id + '\')">Cancelar</button>' +
+            '<button class="btn pri" onclick="guardarPagoPedido(\'' + p.id + '\')"' +
+            (EDPAGO.medio ? '' : ' disabled') + '>Guardar</button>'
+  });
+}
+
+function setPagoPedido(id, k){
+  EDPAGO.medio = k;
+  if (k !== 'cuenta') EDPAGO.cuentaId = null;
+  else if (S.cuentas.length === 1) EDPAGO.cuentaId = S.cuentas[0].id;
+  formPagoPedido(id);
+}
+function setCuentaPedido(id, cid){ EDPAGO.cuentaId = cid || null; formPagoPedido(id); }
+
+function guardarPagoPedido(id){
+  if (!soloAdmin('cambiar la forma de pago')) return;
+  const p = S.pedidos.find(x => x.id === id); if (!p) return;
+  if (!EDPAGO.medio) return toast('Elegí con qué se pagó');
+  if (EDPAGO.medio === 'cuenta' && !EDPAGO.cuentaId) return toast('Elegí a qué cuenta se carga');
+  const antes = textoPago(p) + (p.cuentaId && cuenta(p.cuentaId) ? ' · ' + cuenta(p.cuentaId).nombre : '');
+  p.pagos = [{ medio: EDPAGO.medio, base: redondear(total(p)),
+               cuentaId: EDPAGO.medio === 'cuenta' ? EDPAGO.cuentaId : null,
+               recibido: 0, vuelto: 0 }];
+  p.pago = EDPAGO.medio;
+  p.cuentaId = EDPAGO.medio === 'cuenta' ? EDPAGO.cuentaId : null;
+  p.pagoEditado = { por: USUARIO ? USUARIO.nombre : '', cuando: new Date().toISOString(), antes: antes };
+  EDPAGO = { id: null, medio: null, cuentaId: null };
+  save(); closeModal(); refresh();
+  toast('Pedido #' + p.num + ': ahora figura como ' + nombrePago(p.pago));
 }
 
 function anularCobrado(id){
