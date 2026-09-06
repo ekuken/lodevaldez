@@ -460,41 +460,10 @@ function tkAplicarAncho(){
   st.textContent = ':root{--tk-fuente:' + p.fuente + 'px;--tk-precio:' + p.precio + '}' +
                    '@media print{@page{margin:' + p.margen + 'mm;size:' + a + 'mm auto}}';
 }
-/* Único lugar desde donde se manda a imprimir.
-   Según cómo esté configurado ESTE equipo (Ajustes → Impresión), el ticket
-   sale por la impresora de acá o se manda a la del café. */
-function tkImprimir(titulo){
+/* Único lugar desde donde se manda a imprimir */
+function tkImprimir(){
   tkAplicarAncho();
-  if (typeof modoImpresion === 'function' && modoImpresion() === 'cola'){
-    const html = $('#tk').innerHTML;
-    nubeMandarAImprimir(titulo || 'Ticket', html, anchoTicket()).then(r => {
-      toast(r.ok ? '🖨 Mandado a la impresora del café' : '⚠ ' + r.msg);
-    });
-    return;
-  }
-  window.print();      /* el ÚNICO window.print() de esta rama */
-}
-
-/* Ticket de prueba: para saber si la impresora y el papel están bien sin
-   tener que abrir una mesa e inventar un pedido. */
-function imprimirPrueba(){
-  $('#tk').innerHTML =
-    tkHead() + '<div class="l"></div>' +
-    '<div class="c"><b>PRUEBA DE IMPRESORA</b></div>' +
-    '<div class="c">' + fechaCorta(new Date()) + ' ' + hora(new Date()) + '</div>' +
-    '<div class="l"></div>' +
-    '<table>' +
-      '<tr><td><b>1 x Caf&eacute; con leche</b></td><td align="right">' + fmt(2200) + '</td></tr>' +
-      '<tr><td><b>3 x Medialuna de manteca</b></td><td align="right">' + fmt(2700) + '</td></tr>' +
-      '<tr><td colspan="2" class="s">&nbsp;&nbsp;&nbsp;' + fmt(900) + ' c/u</td></tr>' +
-      '<tr><td><b>2 x Tostado de jam&oacute;n y queso completo</b></td><td align="right">' + fmt(7600) + '</td></tr>' +
-    '</table>' +
-    '<div class="l"></div>' +
-    '<table><tr><td><b>TOTAL</b></td><td align="right"><b>' + fmt(12500) + '</b></td></tr></table>' +
-    '<div class="l"></div>' +
-    '<div class="c s">Papel de ' + anchoTicket() + ' mm</div>' +
-    '<div class="c s">Si se lee el importe entero de la derecha, est&aacute; bien</div>';
-  tkImprimir('Prueba de impresora');
+  window.print();      /* el ÚNICO window.print() del sistema */
 }
 
 function tkHead(){
@@ -571,7 +540,7 @@ function imprimirPedido(p, nuevos, reimpresion){
     '<div class="l"></div>' +
     '<div class="c">' + esc(S.config.pieTicket) + '</div>' +
     '<div class="c s" style="margin-top:4px">Documento no v&aacute;lido como factura</div>';
-  tkImprimir('Pedido #' + p.num + (p.tipo === 'mesa' ? ' · Mesa ' + p.mesaNum : ' · Para llevar'));
+  tkImprimir();
   toast(reimpresion ? 'Pedido reimpreso' : 'Pedido impreso y enviado');
 }
 
@@ -622,5 +591,5 @@ function imprimirCierre(id){
     '</table>' +
     (c.nota ? '<div class="l"></div><div class="s">' + esc(c.nota) + '</div>' : '') +
     '<div class="l"></div><div style="height:26px"></div><div class="c">Firma responsable</div>';
-  tkImprimir('Cierre de caja ' + (c.turno || '') + ' ' + fechaCorta(c.fecha + 'T12:00'));
+  tkImprimir();
 }

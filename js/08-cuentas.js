@@ -253,7 +253,7 @@ function imprimirResumenCuenta(id){
     '</table>' +
     '<div class="l"></div>' +
     '<div class="c s">Documento no v&aacute;lido como factura</div>';
-  tkImprimir('Resumen de cuenta ' + c.nombre);
+  tkImprimir();
 }
 
 function exportarCuentas(){

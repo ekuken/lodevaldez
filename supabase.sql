@@ -50,27 +50,6 @@ alter table public.respaldos add column if not exists creado   timestamptz not n
 create index if not exists respaldos_local_fecha
   on public.respaldos (local_id, creado desc);
 
--- ---------- 4. Cola de impresión ----------
--- Sirve para imprimir desde una computadora que NO tiene la impresora
--- enchufada, o desde un celular. El que manda no imprime: deja el ticket
--- acá anotado. La computadora que tiene la impresora lo levanta y lo saca.
--- Así no hay que compartir nada en la red del café, que es la misma que
--- usan los clientes.
-create table if not exists public.impresiones (
-  id          bigserial primary key,
-  local_id    text not null references public.locales(id) on delete cascade,
-  titulo      text not null default '',      -- "Pedido #12 · Mesa 4"
-  html        text not null,                 -- el ticket ya armado
-  ancho       int  not null default 80,      -- mm de papel de ese café
-  creado      timestamptz not null default now(),
-  impreso     timestamptz,                   -- nulo = todavía no salió
-  impreso_por text,                          -- qué equipo lo imprimió
-  pedido_por  text                           -- quién lo mandó
-);
-
-create index if not exists impresiones_pendientes
-  on public.impresiones (local_id, creado) where impreso is null;
-
 -- ============================================================
 --  SEGURIDAD (Row Level Security)
 --  Sin esto, cualquiera con la dirección del sistema leería todo.
@@ -78,10 +57,9 @@ create index if not exists impresiones_pendientes
 --  desde el navegador: el filtro corre en el servidor.
 -- ============================================================
 
-alter table public.locales     enable row level security;
-alter table public.miembros    enable row level security;
-alter table public.respaldos   enable row level security;
-alter table public.impresiones enable row level security;
+alter table public.locales   enable row level security;
+alter table public.miembros  enable row level security;
+alter table public.respaldos enable row level security;
 
 -- ---------- Permisos sobre las tablas ----------
 -- OJO: RLS decide QUÉ FILAS ve cada uno, pero antes hace falta el permiso
@@ -93,15 +71,11 @@ grant select, update on public.locales   to authenticated;
 grant select         on public.miembros  to authenticated;
 grant select, insert on public.respaldos to authenticated;
 grant usage, select  on sequence public.respaldos_id_seq to authenticated;
--- La cola de impresión sí se borra: son papeles que ya salieron.
-grant select, insert, update, delete on public.impresiones to authenticated;
-grant usage, select  on sequence public.impresiones_id_seq to authenticated;
 
 -- Sin iniciar sesión no se toca nada.
-revoke all on public.locales     from anon;
-revoke all on public.miembros    from anon;
-revoke all on public.respaldos   from anon;
-revoke all on public.impresiones from anon;
+revoke all on public.locales   from anon;
+revoke all on public.miembros  from anon;
+revoke all on public.respaldos from anon;
 
 -- ¿El usuario que está pidiendo es miembro de este café?
 -- Se reemplaza, NO se borra: puede haber muchas políticas colgando de ella
@@ -153,30 +127,6 @@ create policy "crear respaldos de su cafe" on public.respaldos
   with check (public.es_miembro(local_id));
 
 -- Los respaldos no se pueden modificar ni borrar desde el sistema.
-
--- --- cola de impresión: solo la del café propio ---
--- Se permite borrar, a diferencia de los respaldos: son tickets que ya
--- salieron por la impresora y no tiene sentido guardarlos.
-drop policy if exists "ver impresiones de su cafe" on public.impresiones;
-create policy "ver impresiones de su cafe" on public.impresiones
-  for select to authenticated
-  using (public.es_miembro(local_id));
-
-drop policy if exists "mandar a imprimir en su cafe" on public.impresiones;
-create policy "mandar a imprimir en su cafe" on public.impresiones
-  for insert to authenticated
-  with check (public.es_miembro(local_id));
-
-drop policy if exists "marcar impreso en su cafe" on public.impresiones;
-create policy "marcar impreso en su cafe" on public.impresiones
-  for update to authenticated
-  using (public.es_miembro(local_id))
-  with check (public.es_miembro(local_id));
-
-drop policy if exists "borrar impresiones de su cafe" on public.impresiones;
-create policy "borrar impresiones de su cafe" on public.impresiones
-  for delete to authenticated
-  using (public.es_miembro(local_id));
 
 -- ============================================================
 --  Guardado seguro: sube la versión y deja copia de respaldo.
