@@ -35,6 +35,7 @@ function renderAjustes(){
     '<div class="small muted" style="margin-top:6px">Es la impresora de <b>' + esc(local() ? local().nombre : 'este café') +
       '</b>: cada local tiene la suya, y cambiarlo acá no afecta al otro. ' +
       'En papel de 58 mm el ticket sale con letra más chica para que entre el precio.</div>' +
+    htmlModoImpresion() +
     '<div class="sep"></div>' +
     '<label class="chk"><input type="checkbox" id="cfPropOn" ' + (c.propinaOn ? 'checked' : '') + '> Mostrar propina sugerida en la cuenta y el ticket</label>' +
     '<div class="field" style="margin-top:10px"><label>Porcentaje de propina sugerida</label>' +
@@ -166,6 +167,53 @@ function borrarTodo(){
     S = structuredClone(DEFAULT_STATE); seed(); save();
     closeModal(); go('mesas'); toast('Datos borrados — sistema reiniciado');
   }, 'Sí, borrar todo');
+}
+
+/* ---------- Qué hace ESTA computadora con los tickets ----------
+   Es por equipo, no por café: se guarda en el navegador. Por eso no está
+   junto al resto de la configuración del negocio, que sí viaja a la nube. */
+const MODOS_IMPRESION = {
+  local:     ['🖨 Imprime en la impresora de esta computadora',
+              'Lo de siempre. El ticket sale por la impresora que tenga este equipo.'],
+  cola:      ['📤 Manda a la impresora del café',
+              'Este equipo no imprime: le pasa el ticket a la computadora que tiene la impresora. ' +
+              'Sirve para la segunda computadora del salón, para un celular o para mirar desde casa.'],
+  impresora: ['✅ Esta computadora tiene la impresora del café',
+              'Imprime lo suyo y además lo que le mandan los demás. Tiene que quedar prendida y con el sistema abierto.']
+};
+
+function htmlModoImpresion(){
+  const m = modoImpresion();
+  return '<div class="sep"></div>' +
+    '<div class="field"><label>Qué hace <b>esta computadora</b> con los tickets</label>' +
+      '<select onchange="cambiarModoImpresion(this.value)">' +
+        Object.keys(MODOS_IMPRESION).map(k =>
+          '<option value="' + k + '" ' + (m === k ? 'selected' : '') + '>' + MODOS_IMPRESION[k][0] + '</option>').join('') +
+      '</select></div>' +
+    '<div class="small muted" style="margin-top:6px">' + MODOS_IMPRESION[m][1] + '</div>' +
+    (m === 'cola'
+      ? '<div class="alert info small" style="margin-top:10px"><span>ℹ</span><div>Para que esto funcione, ' +
+        'en la computadora que tiene la impresora enchufada hay que elegir <b>' + esc(MODOS_IMPRESION.impresora[0]) + '</b>. ' +
+        'Si ninguna está marcada así, los tickets se quedan esperando.</div></div>'
+      : '') +
+    (m === 'impresora'
+      ? '<div class="alert warn small" style="margin-top:10px"><span>⚠</span><div>Para que los tickets que llegan salgan ' +
+        '<b>sin que nadie confirme nada</b>, hay que abrir Chrome con un acceso directo que tenga <b>--kiosk-printing</b> ' +
+        'y dejar esta impresora como predeterminada de Windows. Si no, cada ticket abre el cuadro de impresión y ' +
+        'alguien tiene que apretar Imprimir.</div></div>'
+      : '') +
+    '<div class="row" style="margin-top:10px">' +
+      '<button class="btn sm" onclick="imprimirPrueba()">🖨 Imprimir un ticket de prueba</button>' +
+      '<span class="small muted">Sale un ticket de ejemplo, sin tocar ningún pedido</span>' +
+    '</div>';
+}
+
+function cambiarModoImpresion(m){
+  setModoImpresion(m);
+  refresh();
+  toast(m === 'impresora' ? 'Esta computadora va a imprimir los tickets del café'
+      : m === 'cola'      ? 'Los tickets de esta computadora se mandan al café'
+                          : 'Los tickets salen por la impresora de esta computadora');
 }
 
 /* ---------- Duplicados ----------
