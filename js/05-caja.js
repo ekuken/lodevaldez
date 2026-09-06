@@ -186,44 +186,86 @@ function renderCaja(){
       : vacio('⭐', 'Sin ventas', 'Todavía no se cobraron pedidos este día.')) +
   '</div>';
 
-  /* --- Cierre de caja --- */
-  const cierre = S.cierres.find(c => c.fecha === f);
-  const efectivo = porPago.efectivo ? porPago.efectivo.m : 0;
-  const efeCompras = comprasDia.filter(c => c.pago === 'efectivo').reduce((a, c) => a + c.total, 0);
-  const ingresoEfe = redondear(efectivo + cobrosEfe + ingresosMovEfe);
-  const salidasEfe = redondear(efeCompras + egresosMovEfe);
+  /* --- Cierre de caja por turno ---
+     La caja se puede cerrar varias veces por día. Los turnos ya cerrados se
+     listan arriba con quién los cerró; abajo se arquea el que está abierto,
+     que abarca desde el último cierre hasta ahora. */
+  const turnos = turnosDelDia(f);
+  const abierto = turnos[turnos.length - 1];
+  const cerrados = turnos.slice(0, -1);
+  const t = numerosTurno(f, abierto);
+  /* El fondo suele ser el mismo que dejó el turno anterior */
+  const fondoSug = cerrados.length ? (cerrados[cerrados.length - 1].cierre.fondo || 0) : 0;
+  const hayMovimiento = t.pedidos.length || t.entra || t.sale;
 
   h += '<div class="card"><div class="hd"><h3>🧮 Cierre de caja</h3>' +
-       (cierre ? '<span class="pill ok">Cerrada</span>' : '<span class="pill warn">Pendiente</span>') + '</div><div class="bd">' +
-    '<div class="tot-row"><span class="muted">Fondo inicial</span><b class="mono" id="ceFondoTxt">' + fmt(cierre ? cierre.fondo : 0) + '</b></div>' +
-    '<div class="tot-row"><span class="muted">+ Ventas en efectivo</span><b class="mono">' + fmt(efectivo) + '</b></div>' +
-    (cobrosEfe ? '<div class="tot-row"><span class="muted">+ Cobros de cuentas en efectivo</span><b class="mono">' + fmt(cobrosEfe) + '</b></div>' : '') +
-    (ingresosMovEfe ? '<div class="tot-row"><span class="muted">+ Ingresos extra en efectivo</span><b class="mono">' + fmt(ingresosMovEfe) + '</b></div>' : '') +
-    '<div class="tot-row"><span class="muted">− Compras pagadas en efectivo</span><b class="mono">' + fmt(efeCompras) + '</b></div>' +
-    (egresosMovEfe ? '<div class="tot-row"><span class="muted">− Gastos y retiros en efectivo</span><b class="mono">' + fmt(egresosMovEfe) + '</b></div>' : '') +
-    '<div class="tot-row big"><span>Efectivo esperado</span><span class="mono" id="ceEsp">' + fmt((cierre ? cierre.fondo : 0) + ingresoEfe - salidasEfe) + '</span></div>' +
+    (cerrados.length
+      ? '<span class="pill ok">' + cerrados.length + ' turno(s) cerrado(s)</span>'
+      : '<span class="pill warn">Sin cerrar</span>') +
+    '</div><div class="bd">';
+
+  if (cerrados.length){
+    h += '<div class="tbl-wrap" style="margin-bottom:16px"><table><thead><tr>' +
+        '<th>Turno</th><th>Hasta</th><th>Cerró</th><th class="num">Ventas</th>' +
+        '<th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th><th></th>' +
+      '</tr></thead><tbody>' +
+      cerrados.map(x => { const c = x.cierre; return '<tr>' +
+        '<td><b>' + esc(c.turno || 'Turno') + '</b></td>' +
+        '<td class="mono small">' + hora(c.hasta) + '</td>' +
+        '<td class="small">' + esc(c.usuarioNombre || '—') + '</td>' +
+        '<td class="num">' + fmt(c.ventas) + '</td>' +
+        '<td class="num">' + fmt(c.esperado) + '</td>' +
+        '<td class="num">' + fmt(c.contado) + '</td>' +
+        '<td class="num"><span class="pill ' + (Math.abs(c.dif) < 0.005 ? 'ok' : c.dif > 0 ? 'info' : 'bad') + '">' +
+          fmt(c.dif) + '</span></td>' +
+        '<td class="row" style="flex-wrap:nowrap;gap:4px">' +
+          '<button class="btn xs" onclick="imprimirCierre(\'' + c.id + '\')" title="Imprimir este arqueo">🖨</button>' +
+          (esAdmin() ? '<button class="btn xs dan" onclick="reabrirTurno(\'' + c.id + '\')" title="Reabrir el turno">×</button>' : '') +
+        '</td></tr>'; }).join('') +
+      '</tbody></table></div>';
+  }
+
+  h += '<div class="row" style="justify-content:space-between;margin-bottom:8px">' +
+      '<b>' + (cerrados.length ? 'Turno abierto' : 'Arqueo del día') + '</b>' +
+      '<span class="small muted">desde ' + (cerrados.length ? hora(new Date(abierto.desde).toISOString()) : 'la apertura') + '</span>' +
+    '</div>' +
+    '<div class="tot-row"><span class="muted">Fondo inicial</span><b class="mono" id="ceFondoTxt">' + fmt(fondoSug) + '</b></div>' +
+    '<div class="tot-row"><span class="muted">+ Ventas en efectivo</span><b class="mono">' + fmt(t.efectivo) + '</b></div>' +
+    (t.cobrosEfe ? '<div class="tot-row"><span class="muted">+ Cobros de cuentas en efectivo</span><b class="mono">' + fmt(t.cobrosEfe) + '</b></div>' : '') +
+    (t.extraEfe ? '<div class="tot-row"><span class="muted">+ Ingresos extra en efectivo</span><b class="mono">' + fmt(t.extraEfe) + '</b></div>' : '') +
+    '<div class="tot-row"><span class="muted">− Compras pagadas en efectivo</span><b class="mono">' + fmt(t.comprasEfe) + '</b></div>' +
+    (t.gastosEfe ? '<div class="tot-row"><span class="muted">− Gastos y retiros en efectivo</span><b class="mono">' + fmt(t.gastosEfe) + '</b></div>' : '') +
+    '<div class="tot-row big"><span>Efectivo esperado</span><span class="mono" id="ceEsp">' + fmt(fondoSug + t.entra - t.sale) + '</span></div>' +
     '<div class="sep"></div>' +
+    '<div class="grid2" style="margin-bottom:12px">' +
+      '<div class="field"><label>Nombre del turno</label>' +
+        '<input type="text" id="ceTurno" value="' + esc(nombreTurnoSugerido()) + '" placeholder="Mañana, Tarde…"></div>' +
+      '<div class="field"><label>Lo cierra</label>' +
+        '<input type="text" value="' + esc(USUARIO ? USUARIO.nombre : '—') + '" disabled></div>' +
+    '</div>' +
     '<div class="grid3">' +
-      '<div class="field"><label>Fondo inicial de caja</label><input type="number" step="any" id="ceFondo" value="' + (cierre ? cierre.fondo : 0) + '" oninput="calcCierre(' + ingresoEfe + ',' + salidasEfe + ')"></div>' +
-      '<div class="field"><label>💵 Cambio</label><input type="number" step="any" id="ceCambio" value="' + (cierre && cierre.cambio ? cierre.cambio : '') + '" placeholder="0" oninput="calcCierre(' + ingresoEfe + ',' + salidasEfe + ')"></div>' +
-      '<div class="field"><label>💰 Efectivo</label><input type="number" step="any" id="ceEfe" value="' + (cierre && cierre.efectivoCont ? cierre.efectivoCont : '') + '" placeholder="0" oninput="calcCierre(' + ingresoEfe + ',' + salidasEfe + ')"></div>' +
+      '<div class="field"><label>Fondo inicial de caja</label><input type="number" step="any" id="ceFondo" value="' + fondoSug + '" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
+      '<div class="field"><label>💵 Cambio</label><input type="number" step="any" id="ceCambio" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
+      '<div class="field"><label>💰 Efectivo</label><input type="number" step="any" id="ceEfe" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
     '</div>' +
     '<div class="tot-row" style="margin-top:8px"><span class="muted">Total contado (cambio + efectivo)</span>' +
-      '<b class="mono" id="ceContTxt">' + fmt(cierre ? cierre.contado : 0) + '</b></div>' +
-    '<div id="ceDif" class="alert info" style="margin-top:12px">Ingresá el efectivo contado para ver la diferencia.</div>' +
-    '<div class="field" style="margin-top:10px"><label>Observaciones</label><input type="text" id="ceNota" value="' + esc(cierre ? cierre.nota : '') + '" placeholder="Ej: retiro de $10.000 al mediodía"></div>' +
+      '<b class="mono" id="ceContTxt">' + fmt(0) + '</b></div>' +
+    '<div id="ceDif" class="alert info" style="margin-top:12px">Cargá el cambio y el efectivo para ver la diferencia.</div>' +
+    '<div class="field" style="margin-top:10px"><label>Observaciones</label>' +
+      '<input type="text" id="ceNota" placeholder="Ej: retiro de $10.000 al mediodía"></div>' +
     '<div class="row" style="margin-top:12px">' +
-      '<button class="btn pri grow" onclick="guardarCierre(' + ingresoEfe + ',' + salidasEfe + ',' + ventas + ')">💾 ' + (cierre ? 'Actualizar cierre' : 'Guardar cierre') + '</button>' +
-      '<button class="btn" onclick="imprimirCierre()">🖨 Imprimir</button>' +
+      '<button class="btn pri grow" onclick="guardarCierre(' + t.entra + ',' + t.sale + ',' + t.ventas + ')"' +
+        (hayMovimiento ? '' : ' disabled') + '>🧮 Cerrar turno</button>' +
     '</div>' +
-    (descuentos ? '<div class="small muted" style="margin-top:10px">Descuentos otorgados: ' + fmt(descuentos) + '</div>' : '') +
+    (hayMovimiento ? '' : '<div class="small muted" style="margin-top:8px">Todavía no hubo ventas ni movimientos en este turno.</div>') +
+    (descuentos ? '<div class="small muted" style="margin-top:10px">Descuentos otorgados en el día: ' + fmt(descuentos) + '</div>' : '') +
     (anul.length ? '<div class="small muted" style="margin-top:4px">' + anul.length + ' pedido(s) anulados este día.</div>' : '') +
   '</div></div>';
   h += '</div>';
 
   h += htmlMozosYGastos(dia, movs, f);
   $('#v-caja').innerHTML = h;
-  calcCierre(ingresoEfe, salidasEfe);
+  calcCierre(t.entra, t.sale);
 }
 
 /* ---------- Ventas por mozo y gastos del día ---------- */
@@ -332,9 +374,9 @@ function contadoCierre(){
   return { vacio: vacio, total: num(c ? c.value : 0) + num(e ? e.value : 0) };
 }
 
-function calcCierre(efectivo, efeCompras){
+function calcCierre(entra, sale){
   const fondo = num($('#ceFondo') ? $('#ceFondo').value : 0);
-  const espN = fondo + efectivo - efeCompras;
+  const espN = fondo + entra - sale;
   const esp = $('#ceEsp'); if (esp) esp.textContent = fmt(espN);
   const ft = $('#ceFondoTxt'); if (ft) ft.textContent = fmt(fondo);
   const cont = contadoCierre();
@@ -347,18 +389,45 @@ function calcCierre(efectivo, efeCompras){
   else { d.className = 'alert warn'; d.innerHTML = '<span>▼</span><div><b>Faltante de ' + fmt(-dif) + '</b> respecto de lo esperado.</div>'; }
 }
 
-function guardarCierre(efectivo, efeCompras, ventas){
+function guardarCierre(entra, sale, ventas){
   const f = CAJA.fecha;
+  const abierto = turnoAbierto(f);
+  const nombre = ($('#ceTurno').value || '').trim() || nombreTurnoSugerido();
   const fondo = num($('#ceFondo').value);
   const cambio = num($('#ceCambio').value), efeCont = num($('#ceEfe').value);
   const cont = cambio + efeCont;
-  const esp = fondo + efectivo - efeCompras;
-  const reg = { id: uid(), fecha: f, fondo: fondo, contado: cont, esperado: esp, dif: cont - esp,
-                cambio: cambio, efectivoCont: efeCont,
-                ventas: ventas, efectivo: efectivo, nota: $('#ceNota').value, creado: new Date().toISOString() };
-  const i = S.cierres.findIndex(c => c.fecha === f);
-  if (i >= 0) S.cierres[i] = reg; else S.cierres.push(reg);
-  save(); refresh(); toast('Cierre de caja guardado');
+  const esp = fondo + entra - sale;
+  const ahora = new Date();
+  /* El turno termina ahora si se está cerrando el día de hoy; si es un día
+     anterior, termina cuando terminó ese día. */
+  const hasta = (f === hoy()) ? ahora : new Date(f + 'T23:59:59');
+  const reg = {
+    id: uid(), fecha: f, turno: nombre,
+    desde: new Date(abierto.desde).toISOString(),
+    hasta: hasta.toISOString(),
+    fondo: fondo, contado: cont, esperado: esp, dif: cont - esp,
+    cambio: cambio, efectivoCont: efeCont,
+    ventas: ventas, efectivo: entra, salidas: sale,
+    nota: $('#ceNota').value,
+    usuarioId: USUARIO ? USUARIO.id : null,
+    usuarioNombre: USUARIO ? USUARIO.nombre : '',
+    creado: ahora.toISOString()
+  };
+  S.cierres.push(reg);
+  save(); refresh();
+  toast('Turno "' + nombre + '" cerrado' + (Math.abs(reg.dif) < 0.005 ? ' — caja justa' : ''));
+}
+
+/* Reabrir un turno: se borra el cierre y lo que abarcaba vuelve al turno
+   abierto. Sirve para corregir un arqueo mal cargado sin tocar las ventas. */
+function reabrirTurno(id){
+  if (!soloAdmin('reabrir un turno')) return;
+  const c = S.cierres.find(x => x.id === id); if (!c) return;
+  confirmar('¿Reabrir el turno <b>' + esc(c.turno || '') + '</b> del ' + fechaCorta(c.fecha + 'T12:00') + '?<br><br>' +
+    'Se borra ese arqueo y sus ventas vuelven al turno abierto. Los pedidos no se tocan.', () => {
+      S.cierres = S.cierres.filter(x => x.id !== id);
+      save(); closeModal(); refresh(); toast('Turno reabierto');
+    }, 'Sí, reabrir');
 }
 
 /* ============================================================
@@ -481,45 +550,46 @@ function imprimirTicket(id){
   imprimirPedido(p, null, true);
 }
 
-function imprimirCierre(){
-  const f = CAJA.fecha;
-  const dia = S.pedidos.filter(p => p.estado === 'cerrado' && dkey(p.cerrado) === f);
-  const ventas = dia.reduce((a, p) => a + totalCobrado(p), 0);
-  const porPago = {};
-  dia.forEach(p => { const m = porMedio(p); Object.keys(m).forEach(k => porPago[k] = (porPago[k] || 0) + m[k]); });
-  const fondo = num($('#ceFondo') ? $('#ceFondo').value : 0);
-  const ctd = contadoCierre();
-  const cont = ctd.vacio ? null : ctd.total;
-  const cambio = num($('#ceCambio') ? $('#ceCambio').value : 0);
-  const efeCont = num($('#ceEfe') ? $('#ceEfe').value : 0);
-  const efeCompras = S.compras.filter(c => c.fecha === f && c.pago === 'efectivo').reduce((a, c) => a + c.total, 0);
-  const cobrosEfe = S.pagosCuenta.filter(x => x.fecha === f && x.medio === 'efectivo').reduce((a, x) => a + x.monto, 0);
-  const movsEfe = S.movimientos.filter(m => m.fecha === f && m.medio === 'efectivo');
-  const gastosEfe = movsEfe.filter(m => m.tipo !== 'ingreso').reduce((a, m) => a + m.monto, 0);
-  const extraEfe = movsEfe.filter(m => m.tipo === 'ingreso').reduce((a, m) => a + m.monto, 0);
-  const esp = fondo + (porPago.efectivo || 0) + cobrosEfe + extraEfe - efeCompras - gastosEfe;
+/* Imprime un arqueo YA GUARDADO. Antes esta función leía el fondo y el
+   efectivo contado de los campos de la pantalla: si se la llamaba parado en
+   otra vista, num() devolvía cero y el ticket salía con datos falsos sin dar
+   ningún error. Ahora todo sale del cierre guardado. */
+function imprimirCierre(id){
+  const c = S.cierres.find(x => x.id === id);
+  if (!c) return toast('No encontré ese arqueo');
+  /* Se rearman los medios de pago del turno a partir de su rango */
+  const suyo = turnosDelDia(c.fecha).filter(x => x.cierre && x.cierre.id === c.id)[0];
+  const t = suyo ? numerosTurno(c.fecha, suyo) : null;
+  const porPago = t ? t.porPago : {};
+  const medios = Object.keys(porPago).filter(k => porPago[k]);
   $('#tk').innerHTML =
     tkHead() + '<div class="l"></div>' +
     '<div class="c"><b>CIERRE DE CAJA</b></div>' +
-    '<div class="c">' + fechaCorta(f + 'T12:00') + '</div>' +
+    '<div class="c"><b>' + esc(c.turno || '') + '</b></div>' +
+    '<div class="c">' + fechaCorta(c.fecha + 'T12:00') +
+      (c.hasta ? ' &middot; ' + hora(c.hasta) : '') + '</div>' +
+    (c.usuarioNombre ? '<div class="c">Cerr&oacute;: ' + esc(c.usuarioNombre) + '</div>' : '') +
     '<div class="l"></div>' +
     '<table>' +
-      mediosUsados().map(k => '<tr><td>' + nombrePago(k) + '</td><td align="right">' + fmt(porPago[k] || 0) + '</td></tr>').join('') +
-      '<tr><td><b>TOTAL VENTAS</b></td><td align="right"><b>' + fmt(ventas) + '</b></td></tr>' +
-      '<tr><td>Pedidos</td><td align="right">' + dia.length + '</td></tr>' +
+      (medios.length
+        ? medios.map(k => '<tr><td>' + nombrePago(k) + '</td><td align="right">' + fmt(porPago[k]) + '</td></tr>').join('')
+        : '') +
+      '<tr><td><b>TOTAL VENTAS</b></td><td align="right"><b>' + fmt(c.ventas) + '</b></td></tr>' +
+      (t ? '<tr><td>Pedidos</td><td align="right">' + t.pedidos.length + '</td></tr>' : '') +
     '</table><div class="l"></div>' +
     '<table>' +
-      '<tr><td>Fondo inicial</td><td align="right">' + fmt(fondo) + '</td></tr>' +
-      (cobrosEfe ? '<tr><td>Cobros cuentas</td><td align="right">' + fmt(cobrosEfe) + '</td></tr>' : '') +
-      (extraEfe ? '<tr><td>Ingresos extra</td><td align="right">' + fmt(extraEfe) + '</td></tr>' : '') +
-      (gastosEfe ? '<tr><td>Gastos y retiros</td><td align="right">-' + fmt(gastosEfe) + '</td></tr>' : '') +
-      '<tr><td>Compras efectivo</td><td align="right">-' + fmt(efeCompras) + '</td></tr>' +
-      '<tr><td><b>Efectivo esperado</b></td><td align="right"><b>' + fmt(esp) + '</b></td></tr>' +
-      (cont !== null ? '<tr><td>Cambio</td><td align="right">' + fmt(cambio) + '</td></tr>' +
-        '<tr><td>Efectivo</td><td align="right">' + fmt(efeCont) + '</td></tr>' +
-        '<tr><td><b>Efectivo contado</b></td><td align="right"><b>' + fmt(cont) + '</b></td></tr>' +
-        '<tr><td><b>Diferencia</b></td><td align="right"><b>' + fmt(cont - esp) + '</b></td></tr>' : '') +
+      '<tr><td>Fondo inicial</td><td align="right">' + fmt(c.fondo) + '</td></tr>' +
+      (t && t.cobrosEfe ? '<tr><td>Cobros cuentas</td><td align="right">' + fmt(t.cobrosEfe) + '</td></tr>' : '') +
+      (t && t.extraEfe ? '<tr><td>Ingresos extra</td><td align="right">' + fmt(t.extraEfe) + '</td></tr>' : '') +
+      (t && t.gastosEfe ? '<tr><td>Gastos y retiros</td><td align="right">-' + fmt(t.gastosEfe) + '</td></tr>' : '') +
+      (t && t.comprasEfe ? '<tr><td>Compras efectivo</td><td align="right">-' + fmt(t.comprasEfe) + '</td></tr>' : '') +
+      '<tr><td><b>Efectivo esperado</b></td><td align="right"><b>' + fmt(c.esperado) + '</b></td></tr>' +
+      '<tr><td>Cambio</td><td align="right">' + fmt(c.cambio || 0) + '</td></tr>' +
+      '<tr><td>Efectivo</td><td align="right">' + fmt(c.efectivoCont || 0) + '</td></tr>' +
+      '<tr><td><b>Efectivo contado</b></td><td align="right"><b>' + fmt(c.contado) + '</b></td></tr>' +
+      '<tr><td><b>Diferencia</b></td><td align="right"><b>' + fmt(c.dif) + '</b></td></tr>' +
     '</table>' +
+    (c.nota ? '<div class="l"></div><div class="s">' + esc(c.nota) + '</div>' : '') +
     '<div class="l"></div><div style="height:26px"></div><div class="c">Firma responsable</div>';
   tkImprimir();
 }

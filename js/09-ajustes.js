@@ -80,16 +80,20 @@ function renderAjustes(){
   h += '<div style="margin-top:16px">' + htmlUsuarios() + '</div>';
 
   /* Historial de cierres */
-  const cierres = S.cierres.slice().sort((a, b) => b.fecha.localeCompare(a.fecha));
+  const cierres = S.cierres.slice().sort((a, b) =>
+    b.fecha.localeCompare(a.fecha) || String(b.hasta || '').localeCompare(String(a.hasta || '')));
   h += '<div class="card" style="margin-top:16px"><div class="hd"><h3>🧮 Cierres de caja guardados</h3></div>';
   if (!cierres.length){
     h += vacio('🧮', 'Sin cierres guardados', 'Se registran desde la sección Caja.');
   } else {
-    h += '<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th class="num">Ventas</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th><th>Observaciones</th></tr></thead><tbody>' +
+    h += '<div class="tbl-wrap"><table><thead><tr><th>Fecha</th><th>Turno</th><th>Cerró</th><th class="num">Ventas</th><th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th><th>Observaciones</th><th></th></tr></thead><tbody>' +
       cierres.map(x => '<tr><td class="mono">' + fechaCorta(x.fecha + 'T12:00') + '</td>' +
+        '<td><b>' + esc(x.turno || '—') + '</b>' + (x.hasta ? '<div class="small muted mono">' + hora(x.hasta) + '</div>' : '') + '</td>' +
+        '<td class="small">' + esc(x.usuarioNombre || '—') + '</td>' +
         '<td class="num">' + fmt(x.ventas) + '</td><td class="num">' + fmt(x.esperado) + '</td><td class="num">' + fmt(x.contado) + '</td>' +
         '<td class="num"><span class="pill ' + (Math.abs(x.dif) < 0.005 ? 'ok' : x.dif > 0 ? 'info' : 'bad') + '">' + fmt(x.dif) + '</span></td>' +
-        '<td class="small muted">' + esc(x.nota || '—') + '</td></tr>').join('') +
+        '<td class="small muted">' + esc(x.nota || '—') + '</td>' +
+        '<td><button class="btn xs" onclick="imprimirCierre(\'' + x.id + '\')" title="Imprimir este arqueo">🖨</button></td></tr>').join('') +
       '</tbody></table></div>';
   }
   h += '</div>';

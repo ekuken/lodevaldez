@@ -124,6 +124,17 @@ function migrar(){
      Ajustes → "Sacar duplicados", que muestra qué va a sacar y pide
      confirmación. */
   if (!S.usuarios.some(u => u.rol === 'admin' && u.activo)) S.usuarios.push(usuariosPorDefecto()[0]);
+  /* Los cierres de antes de los turnos abarcaban el día entero y no
+     guardaban quién los hizo. Se los marca como tales para que convivan con
+     los nuevos sin romper los rangos. */
+  if (!Array.isArray(S.cierres)) S.cierres = [];
+  S.cierres.forEach(c => {
+    if (!c.id) c.id = uid();
+    if (!c.turno) c.turno = 'Día completo';
+    if (!c.desde) c.desde = new Date(c.fecha + 'T00:00:00').toISOString();
+    if (!c.hasta) c.hasta = new Date(c.fecha + 'T23:59:59').toISOString();
+    if (c.usuarioNombre === undefined) c.usuarioNombre = '';
+  });
   S.pedidos.forEach(p => {
     if (p.pago === 'mp') p.pago = 'qr';
     if (!Array.isArray(p.pagos)) p.pagos = [];
