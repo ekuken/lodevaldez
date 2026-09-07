@@ -25,6 +25,8 @@ let NUBE = {
   choques: 0,       /* choques seguidos con la otra computadora */
   repintar: false,  /* llegaron datos nuevos pero la pantalla estaba ocupada */
   reconecta: 0,     /* cuándo se probó volver a conectar por última vez */
+  trabado: false,   /* se frenó el guardado para no borrar datos (ver nubeTrabar) */
+  borradoAdrede: false, /* el usuario pidió borrar todo: ese vaciado SÍ se sube */
   estado: 'local'   /* local | sincronizado | guardando | error | conflicto | configurar */
 };
 
@@ -372,6 +374,30 @@ function nubeLimpiarCatalogos(estado){
 }
 
 /* Junta los tres estados y devuelve uno solo */
+/* Cuántos registros tiene un café. Es la medida con la que se decide si algo
+   "tiene datos" o "está vacío": sirve igual para lo de acá, lo de la nube y
+   el resultado de combinar. */
+function nubeCuantos(e){
+  if (!e || typeof e !== 'object') return 0;
+  return NUBE_LISTAS.reduce((a, k) => a + (Array.isArray(e[k]) ? e[k].length : 0), 0);
+}
+
+/* Frena TODO el guardado a la nube y avisa. Se usa cuando lo que estaba por
+   pasar era una pérdida de datos: es preferible quedarse sin sincronizar —los
+   datos siguen enteros en cada computadora— que sincronizar un borrado.
+   No se destraba solo: hay que recargar, ya mirando qué pasó. */
+function nubeTrabar(motivo){
+  NUBE.trabado = true;
+  NUBE.pendiente = false;
+  clearTimeout(NUBE.timer);
+  console.error('[nube] GUARDADO FRENADO para no borrar datos: ' + motivo);
+  nubeEstado('conflicto');
+  if (typeof toast === 'function')
+    toast('⛔ Guardado frenado: se evitó borrar datos. No cierres sin avisar.');
+  const el = document.getElementById('nubeEstado');
+  if (el) el.title = 'Guardado frenado: ' + motivo;
+}
+
 function nubeCombinar(base, mio, suyo){
   const cuenta = { choques: 0 };
   base = base || {}; mio = mio || {}; suyo = suyo || {};
@@ -416,13 +442,44 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
   remoto = (remoto && Object.keys(remoto).length) ? remoto : null;
   if (!remoto){ nubeBaseEscribir({}); nubeGuardar(300); return; }
   const base = nubeBaseLeer();
-  /* Cuando esta computadora arrancó en blanco y armó el café de ejemplo, no
-     hay nada suyo que conservar: se toma el de la nube entero. Combinar el
-     ejemplo con el café real dejaba dos juegos de mesas, dos barras y dos
-     veces cada usuario, y se repetía en cada arranque en blanco. */
-  const res = tomarLaNubeSinCombinar
+
+  /* ---------- Arrancar en blanco NO es borrar ----------
+     Acá se perdieron los datos dos veces, el 7/9/2026. El mecanismo: una
+     computadora que abre sin datos guardados —porque es nueva, porque se
+     abrió el sistema desde otra dirección, porque se limpió el navegador—
+     conserva igual la nota de "así estaba la nube la última vez". Al
+     combinar, el sistema veía los 309 pedidos en la nube, veía que la nota
+     decía que esos mismos 309 ya estaban, y no encontraba ninguno acá.
+     Conclusión: "los borró el usuario". Y los borraba de los dos lados.
+     Pero una computadora que arranca vacía no está borrando nada: está
+     arrancando. Si acá no hay NADA y en la nube hay algo, no se combina:
+     se toma lo de la nube tal cual, que es lo que ya se hacía cuando el
+     sistema se abría por primera vez y armaba el café de ejemplo. */
+  const tengoAca = nubeCuantos(S);
+  const enLaNube = nubeCuantos(remoto);
+  const arrancoEnBlanco = tomarLaNubeSinCombinar || (tengoAca === 0 && enLaNube > 0);
+  if (arrancoEnBlanco && !tomarLaNubeSinCombinar)
+    console.warn('[nube] esta computadora abrió sin datos y la nube tiene ' + enLaNube +
+                 ' registros: se toma lo de la nube sin combinar, para no borrarlos.');
+
+  const res = arrancoEnBlanco
     ? { estado: JSON.parse(JSON.stringify(remoto)), choques: 0, repetidos: 0 }
     : nubeCombinar(base, S, remoto);
+
+  /* ---------- El candado ----------
+     Red de seguridad para cualquier otro camino que termine borrando de
+     golpe. Un café no pasa de 309 pedidos a 0 por las buenas: si el
+     resultado se lleva puesto casi todo lo que hay en la nube, se frena
+     todo —no se aplica, no se sube— y se avisa en pantalla. Lo único que
+     puede vaciar un café es pedirlo a mano desde Ajustes, y eso avisa que
+     viene (ver NUBE.borradoAdrede en borrarTodo). */
+  const quedaria = nubeCuantos(res.estado);
+  if (!NUBE.borradoAdrede && enLaNube >= 10 && quedaria < enLaNube / 2){
+    nubeTrabar('la combinación dejaba ' + quedaria + ' registros de los ' + enLaNube +
+               ' que hay en la nube');
+    return;
+  }
+
   nubeBaseEscribir(remoto);                 /* esto es lo que la nube tiene ahora */
   const cambio = nubeFirma(res.estado) !== nubeFirma(S);
   S = res.estado;
@@ -510,7 +567,7 @@ async function nubeReconectar(){
    Se llama solo, con un respiro de unos segundos, para no mandar
    una copia por cada toque en la pantalla.                        */
 function nubeGuardar(demora){
-  if (!NUBE.activa) return;
+  if (!NUBE.activa || NUBE.trabado) return;
   NUBE.pendiente = true;
   if (NUBE.estado !== 'error' && NUBE.estado !== 'configurar') nubeEstado('guardando');
   clearTimeout(NUBE.timer);
@@ -529,7 +586,15 @@ function nubeReintentar(){
 }
 
 async function nubeSubirAhora(){
-  if (!NUBE.activa || NUBE.guardando || !S) return;
+  if (!NUBE.activa || NUBE.guardando || NUBE.trabado || !S) return;
+  /* Sin la versión de la nube, guardar_local pisa lo que haya del otro lado
+     sin preguntar: es la puerta por la que una computadora recién abierta
+     puede borrarle el día entero a la otra. Si no se sabe, primero se baja. */
+  if (NUBE.version == null){
+    console.warn('[nube] no se sube todavía: falta leer la versión de la nube.');
+    if (typeof cargarDesdeNube === 'function') cargarDesdeNube();
+    return;
+  }
   NUBE.guardando = true; NUBE.pendiente = false;
   let fallo = false;
   /* Se manda una copia congelada: S puede cambiar mientras se espera la

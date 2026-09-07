@@ -161,7 +161,13 @@ function importarBackup(inp){
 }
 
 function borrarTodo(){
-  confirmar('Esto borra <b>todos los pedidos, productos, proveedores y compras</b> de este equipo. No se puede deshacer.<br><br>Conviene descargar un respaldo antes.', () => {
+  confirmar('Esto borra <b>todos los pedidos, productos, proveedores y compras</b> de este equipo, ' +
+    'y también <b>los de la nube</b>: el borrado llega a las otras computadoras. No se puede deshacer.' +
+    '<br><br>Conviene descargar un respaldo antes.', () => {
+    /* Este es el ÚNICO vaciado legítimo, así que se avisa que viene: sin
+       esta marca el candado de la nube lo frena, igual que frena cualquier
+       otro borrado masivo (ver nubeJuntarConLaNube). */
+    if (typeof NUBE !== 'undefined') NUBE.borradoAdrede = true;
     localStorage.removeItem(KEY());
     S = structuredClone(DEFAULT_STATE); seed(); save();
     closeModal(); go('mesas'); toast('Datos borrados — sistema reiniciado');
