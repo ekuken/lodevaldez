@@ -5,7 +5,22 @@
 /* Arranca el sistema con los datos del local ya elegido */
 async function arrancarLocal(){
   load();                                   /* lo guardado en esta computadora */
-  if (typeof cargarDesdeNube === 'function') await cargarDesdeNube();
+  /* La nube NO frena el dibujo. Antes se esperaba su respuesta para recién
+     ahí mostrar el salón, y esa espera no tenía límite: con el internet del
+     café lento o a medio caer, la pantalla se quedaba en blanco hasta que
+     contestara —ese es el rato en que hay que apretar F5, porque recargar
+     vuelve a intentar y la segunda vez suele entrar—. Ahora se pinta con lo
+     que hay guardado en esta computadora y lo de la nube entra cuando llega:
+     nubeJuntarConLaNube() repinta solo al combinarlo.
+     La excepción es el arranque en blanco: si esta computadora nunca vio el
+     café, lo único que hay para mostrar es el ejemplo recién armado, así que
+     ahí sí se espera a la nube, pero con un límite. */
+  const enBlanco = SEMBRADO_AHORA;
+  const trayendo = (typeof cargarDesdeNube === 'function')
+    ? cargarDesdeNube().catch(e => console.error('[nube] trayendo el café:', e))
+    : null;
+  if (trayendo && enBlanco)
+    await Promise.race([trayendo, new Promise(r => setTimeout(r, 8000))]);
   if (window.innerWidth < 760) ED.zoom = 2.2;   // en el celular el plano arranca ampliado
   $$('#nav button').forEach(b => b.onclick = () => go(b.dataset.v));
   let sesion = null;
@@ -58,6 +73,19 @@ async function arrancarSistema(){
 
 (function init(){
   try{ LOCAL = localStorage.getItem(LOCAL_KEY); }catch(e){}
-  arrancarSistema();
+  /* Si el arranque se cae, hasta ahora la pantalla quedaba en blanco y sin
+     una sola pista de por qué: el error se perdía en la consola, que nadie
+     mira en el mostrador. Ahora se ve el motivo y un botón para reintentar. */
+  arrancarSistema().catch(e => {
+    console.error('[inicio] no se pudo abrir el sistema:', e);
+    const w = document.querySelector('.wrap');
+    if (!w) return;
+    w.innerHTML = '<div class="alert warn" style="margin:20px"><span>⚠</span><div>' +
+      '<b>No se pudo abrir el sistema.</b>' +
+      '<div class="small" style="margin:4px 0 10px">' +
+        (typeof esc === 'function' ? esc(String(e && e.message || e)) : '') + '</div>' +
+      '<button class="btn" onclick="location.reload()">Reintentar</button>' +
+      '</div></div>';
+  });
   window.addEventListener('beforeprint', () => { const o = $('#ovl'); if (o) o._wasOpen = !o.hidden; });
 })();

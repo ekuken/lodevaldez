@@ -388,7 +388,15 @@ function modal(opts){
   const f = $('input,select,textarea', o); if (f && !opts.nofocus) f.focus();
   return o;
 }
-function closeModal(){ const o = $('#ovl'); o.hidden = true; o.innerHTML = ''; }
+/* Si mientras el formulario estaba abierto llegaron datos de la otra
+   computadora, no se repintó para no moverle la pantalla de abajo al que
+   estaba escribiendo (ver nubeRepintar). Ahora que se cerró, se repinta ya:
+   antes había que esperar hasta 8 segundos al control de fondo, y en ese
+   rato la mesa que la otra compu acababa de liberar seguía ocupada. */
+function closeModal(){
+  const o = $('#ovl'); o.hidden = true; o.innerHTML = '';
+  if (typeof NUBE !== 'undefined' && NUBE.repintar) nubeRepintar();
+}
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#ovl').hidden) closeModal(); });
 
 function confirmar(txt, onOk, okLabel){

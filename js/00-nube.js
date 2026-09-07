@@ -24,6 +24,7 @@ let NUBE = {
   base: null,       /* lo último que sabemos que quedó en la nube (ver más abajo) */
   choques: 0,       /* choques seguidos con la otra computadora */
   repintar: false,  /* llegaron datos nuevos pero la pantalla estaba ocupada */
+  reconecta: 0,     /* cuándo se probó volver a conectar por última vez */
   estado: 'local'   /* local | sincronizado | guardando | error | conflicto | configurar */
 };
 
@@ -96,8 +97,13 @@ function nubeCargarLibreria(){
     const fin = motivo => {
       if (listo) return;
       listo = true;
-      if (!window.supabase) console.error('[nube] no cargó la librería de Supabase (' + motivo +
-        '). Sin ella el sistema trabaja solo en esta computadora. Dirección: ' + NUBE_LIB);
+      if (!window.supabase){
+        console.error('[nube] no cargó la librería de Supabase (' + motivo +
+          '). Sin ella el sistema trabaja solo en esta computadora. Dirección: ' + NUBE_LIB);
+        /* Se saca el <script> que no cargó: esto se reintenta cada tanto y
+           si no, al final del día quedan cientos colgando del <head>. */
+        s.remove();
+      }
       resolve(!!window.supabase);
     };
     const s = document.createElement('script');
@@ -108,6 +114,18 @@ function nubeCargarLibreria(){
     setTimeout(() => fin('tardó más de 6 segundos'), 6000);
   });
 }
+/* ---------- Ninguna espera a la nube puede ser eterna ----------
+   Con el Wi-Fi del café a medio caer, una consulta puede quedar colgada sin
+   dar error ni contestar nunca. Si alguien la está esperando para dibujar,
+   la pantalla se queda en blanco. Pasado el límite se sigue sin ella y se
+   reintenta después: los datos de esta computadora alcanzan para trabajar. */
+function nubeConLimite(promesa, ms){
+  const limite = new Promise(r => setTimeout(() => r({
+    data: null, error: { code: 'TIMEOUT', message: 'la nube no contestó en ' + ((ms || 12000) / 1000) + ' s' }
+  }), ms || 12000));
+  return Promise.race([promesa, limite]);
+}
+
 function nubeIniciar(){
   if (!nubeConfigurada() || !window.supabase) return false;
   if (!NUBE.cli) NUBE.cli = window.supabase.createClient(NUBE_URL, NUBE_KEY);
@@ -163,8 +181,8 @@ async function nubeMisLocales(){
 async function nubeBajar(localId){
   if (!nubeIniciar()) return null;
   try{
-    const { data, error } = await NUBE.cli
-      .from('locales').select('datos, version').eq('id', localId).single();
+    const { data, error } = await nubeConLimite(NUBE.cli
+      .from('locales').select('datos, version').eq('id', localId).single());
     if (error || !data){
       /* Sin la versión de la nube, subir pisaría lo que haya del otro lado:
          se corta la subida hasta poder leer. */
@@ -438,21 +456,55 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
    falta apretar F5.                                                     */
 async function nubeMirarNovedades(){
   if (NUBE.repintar) nubeRepintar();
-  if (!NUBE.activa || NUBE.guardando || NUBE.pendiente || !S) return;
   if (document.visibilityState !== 'visible') return;
+  if (!NUBE.activa){ await nubeReconectar(); return; }
+  /* Tener algo nuestro sin subir ya NO frena esta lectura. Antes sí, y en
+     pleno servicio la pantalla se quedaba vieja: cada toque en un pedido
+     reprograma la subida, así que "pendiente" quedaba prendido minutos
+     enteros y en todo ese rato no se miraba lo que hacía la otra
+     computadora. Bajar y combinar no pierde lo de acá: para eso está la
+     base de referencia, y si queda algo sin subir se reprograma solo. */
+  if (NUBE.guardando || !S) return;
   if (!nubeIniciar() || !LOCAL) return;
   try{
-    const { data, error } = await NUBE.cli
-      .from('locales').select('version').eq('id', LOCAL).single();
+    const { data, error } = await nubeConLimite(NUBE.cli
+      .from('locales').select('version').eq('id', LOCAL).single(), 8000);
     if (error || !data || data.version === NUBE.version) return;
-    const full = await NUBE.cli
-      .from('locales').select('datos, version').eq('id', LOCAL).single();
+    const full = await nubeConLimite(NUBE.cli
+      .from('locales').select('datos, version').eq('id', LOCAL).single());
     if (full.error || !full.data) return;
+    /* Mientras se bajaba pudo arrancar una subida, que ya mandó la versión
+       vieja: combinar ahora se la cambiaría abajo de los pies. Se deja para
+       la próxima vuelta, dentro de 8 segundos. */
+    if (NUBE.guardando) return;
     NUBE.version = full.data.version;
     nubeJuntarConLaNube(full.data.datos);
   }catch(e){ /* es un chequeo de fondo: si falla, se reintenta en la próxima */ }
 }
 setInterval(nubeMirarNovedades, 8000);
+
+/* ---------- Volver a conectar sin recargar ----------
+   Si el café abre con el internet caído, o si se corta un rato largo, la
+   nube queda apagada (NUBE.activa = false) y hasta ahora la única forma de
+   revivirla era apretar F5. El evento "online" no alcanza: avisa cuando
+   cambia la placa de red, y el Wi-Fi del café puede seguir prendido con el
+   internet caído, así que nunca llega. Por eso se reintenta solo.        */
+async function nubeReconectar(){
+  if (NUBE.activa || !nubeConfigurada()) return false;
+  const ahora = Date.now();
+  if (ahora - NUBE.reconecta < 30000) return false;   /* sin insistir de más */
+  NUBE.reconecta = ahora;
+  if (!(await nubeCargarLibreria())) return false;
+  if (!(await nubeSesion())) return false;
+  NUBE.activa = true;
+  /* Se BAJA antes de subir. Sin la versión de la nube, guardar_local pisa
+     lo que haya del otro lado sin preguntar: si mientras estábamos sin
+     internet la otra computadora trabajó, subir primero le borraría el
+     turno entero. cargarDesdeNube() lee, combina y recién ahí sube. */
+  if (typeof cargarDesdeNube === 'function') await cargarDesdeNube();
+  if (NUBE.activa) nubeRepintar();
+  return NUBE.activa;
+}
 
 /* ---------- Subir ----------
    Se llama solo, con un respiro de unos segundos, para no mandar
@@ -582,12 +634,11 @@ async function nubeRevisar(){
 
 /* Al volver la conexión: si ya estaba conectado, sube lo pendiente; si había
    arrancado sin internet, se conecta solo sin necesidad de recargar. */
-window.addEventListener('online', async () => {
+window.addEventListener('online', () => {
   NUBE.fallos = 0;                              /* la espera vuelve a empezar corta */
   if (NUBE.activa){ nubeGuardar(500); return; }
-  if (!nubeConfigurada()) return;
-  if (!(await nubeCargarLibreria())) return;
-  if (await nubeSesion()){ NUBE.activa = true; nubeGuardar(500); }
+  NUBE.reconecta = 0;                           /* volvió la red: probar ya, sin esperar */
+  nubeReconectar();
 });
 
 /* Al minimizar o cambiar de pestaña se aprovecha para guardar ya:
@@ -601,3 +652,10 @@ document.addEventListener('visibilitychange', () => {
     nubeMirarNovedades();
   }
 });
+
+/* El celular no siempre avisa con "visibilitychange": volviendo con el botón
+   de atrás la página sale de la memoria del navegador (pageshow) y, al
+   desbloquear la pantalla, a veces lo único que llega es el foco. Se mira en
+   los tres casos; la consulta es solo el número de versión. */
+window.addEventListener('pageshow', () => nubeMirarNovedades());
+window.addEventListener('focus',    () => nubeMirarNovedades());
