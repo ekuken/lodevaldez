@@ -131,6 +131,45 @@ create policy "crear respaldos de su cafe" on public.respaldos
 -- Los respaldos no se pueden modificar ni borrar desde el sistema.
 
 -- ============================================================
+--  Qué copias de respaldo se conservan
+--  ------------------------------------------------------------
+--  Va aparte de guardar_local a propósito: el editor de SQL de
+--  Supabase corta los cuerpos largos y la función no llegaba
+--  entera ("unterminated dollar-quoted string"). Partida en dos,
+--  cada una entra sin problema, y la regla de qué guardar queda
+--  con nombre propio y se puede cambiar sola.
+-- ============================================================
+create or replace function public.podar_respaldos(p_local text)
+returns void
+language sql
+security definer
+set search_path = public
+as $poda$
+  delete from public.respaldos r
+   where r.local_id = p_local
+     and r.id not in (
+           select id from public.respaldos
+            where local_id = p_local
+            order by creado desc
+            limit 50
+         )
+     and r.id not in (
+           select distinct on (floor(extract(epoch from creado) / 43200)) id
+             from public.respaldos
+            where local_id = p_local
+              and creado > now() - interval '30 days'
+            order by floor(extract(epoch from creado) / 43200),
+                     jsonb_array_length(coalesce(datos->'pedidos',   '[]'::jsonb)) +
+                     jsonb_array_length(coalesce(datos->'productos', '[]'::jsonb)) +
+                     jsonb_array_length(coalesce(datos->'mesas',     '[]'::jsonb)) desc,
+                     creado desc
+         );
+$poda$;
+
+-- No se le da permiso a nadie: la llama guardar_local desde adentro, que
+-- corre como dueña de la base. Nadie puede borrar respaldos desde el sistema.
+
+-- ============================================================
 --  Guardado seguro: sube la versión y deja copia de respaldo.
 --  Si otra computadora guardó mientras tanto, avisa en vez de
 --  pisar los datos.
@@ -193,26 +232,7 @@ begin
   -- De cada franja se conserva la copia con MÁS registros, no la más nueva:
   -- si en esa franja pasó un borrado, lo que hay que guardar es la de antes.
   insert into public.respaldos (local_id, datos) values (p_local, p_datos);
-
-  delete from public.respaldos r
-   where r.local_id = p_local
-     and r.id not in (
-           select id from public.respaldos
-            where local_id = p_local
-            order by creado desc
-            limit 50
-         )
-     and r.id not in (
-           select distinct on (floor(extract(epoch from creado) / 43200)) id
-             from public.respaldos
-            where local_id = p_local
-              and creado > now() - interval '30 days'
-            order by floor(extract(epoch from creado) / 43200),
-                     jsonb_array_length(coalesce(datos->'pedidos',   '[]'::jsonb)) +
-                     jsonb_array_length(coalesce(datos->'productos', '[]'::jsonb)) +
-                     jsonb_array_length(coalesce(datos->'mesas',     '[]'::jsonb)) desc,
-                     creado desc
-         );
+  perform public.podar_respaldos(p_local);
 
   return query
     select true, l.version, l.datos from public.locales l where l.id = p_local;
