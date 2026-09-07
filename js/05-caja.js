@@ -50,9 +50,33 @@ function enTurnoManual(creado, f, t){
   return enTurno(creado, t);
 }
 
-function nombreTurnoSugerido(){
-  const h = new Date().getHours();
-  return h < 15 ? 'Mañana' : h < 21 ? 'Tarde' : 'Noche';
+/* En el café se hacen dos turnos, mañana y tarde, así que el nombre se
+   sugiere por el orden en que se cierra: el primer arqueo del día es el de
+   la mañana y el segundo el de la tarde. Antes se miraba la hora, y el día
+   que la mañana cerraba tarde el turno salía anotado como "Tarde". El
+   nombre se puede escribir a mano igual. */
+function nombreTurnoSugerido(cerrados){
+  const n = cerrados != null ? cerrados : turnosDelDia(CAJA.fecha).length - 1;
+  return n === 0 ? 'Mañana' : n === 1 ? 'Tarde' : 'Turno ' + (n + 1);
+}
+
+/* ---------- El fondo con el que arranca un turno ----------
+   La plata que queda en el cajón al cerrar es el cambio para el que sigue:
+   ese mismo cambio es el fondo inicial del próximo turno. Antes se sugería
+   el fondo del turno anterior —el número con el que ese turno había
+   arrancado, no lo que dejó— y el primer turno del día empezaba siempre en
+   cero, aunque la tarde anterior hubiera dejado el cambio en la caja.    */
+function cambioQueDejo(c){
+  if (!c) return 0;
+  /* Los arqueos viejos no anotaban el cambio aparte: se usa su fondo */
+  return typeof c.cambio === 'number' ? c.cambio : (c.fondo || 0);
+}
+/* El último cierre hecho antes de este turno, sea de hoy o de días pasados */
+function cierreAnterior(f, cerrados){
+  if (cerrados.length) return cerrados[cerrados.length - 1].cierre;
+  return S.cierres.filter(c => c.fecha < f)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha) || msDe(a.hasta) - msDe(b.hasta))
+    .pop() || null;
 }
 
 /* Los números de un turno: solo lo que pasó dentro de su rango */
@@ -194,8 +218,13 @@ function renderCaja(){
   const abierto = turnos[turnos.length - 1];
   const cerrados = turnos.slice(0, -1);
   const t = numerosTurno(f, abierto);
-  /* El fondo suele ser el mismo que dejó el turno anterior */
-  const fondoSug = cerrados.length ? (cerrados[cerrados.length - 1].cierre.fondo || 0) : 0;
+  /* Se arranca con el cambio que dejó el turno anterior (ver cambioQueDejo) */
+  const previo = cierreAnterior(f, cerrados);
+  const fondoSug = cambioQueDejo(previo);
+  const origenFondo = previo
+    ? 'Es el cambio que dejó ' + esc(previo.turno || 'el turno anterior') +
+      (previo.fecha !== f ? ', del ' + fechaCorta(previo.fecha + 'T12:00') : '') + '.'
+    : 'No hay ningún cierre anterior: poné el cambio con el que abrieron la caja.';
   const hayMovimiento = t.pedidos.length || t.entra || t.sale;
 
   h += '<div class="card"><div class="hd"><h3>🧮 Cierre de caja</h3>' +
@@ -207,7 +236,8 @@ function renderCaja(){
   if (cerrados.length){
     h += '<div class="tbl-wrap" style="margin-bottom:16px"><table><thead><tr>' +
         '<th>Turno</th><th>Hasta</th><th>Cerró</th><th class="num">Ventas</th>' +
-        '<th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th><th></th>' +
+        '<th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th>' +
+        '<th class="num">Dejó de cambio</th><th></th>' +
       '</tr></thead><tbody>' +
       cerrados.map(x => { const c = x.cierre; return '<tr>' +
         '<td><b>' + esc(c.turno || 'Turno') + '</b></td>' +
@@ -218,6 +248,7 @@ function renderCaja(){
         '<td class="num">' + fmt(c.contado) + '</td>' +
         '<td class="num"><span class="pill ' + (Math.abs(c.dif) < 0.005 ? 'ok' : c.dif > 0 ? 'info' : 'bad') + '">' +
           fmt(c.dif) + '</span></td>' +
+        '<td class="num mono">' + fmt(cambioQueDejo(c)) + '</td>' +
         '<td class="row" style="flex-wrap:nowrap;gap:4px">' +
           '<button class="btn xs" onclick="imprimirCierre(\'' + c.id + '\')" title="Imprimir este arqueo">🖨</button>' +
           (esAdmin() ? '<button class="btn xs dan" onclick="reabrirTurno(\'' + c.id + '\')" title="Reabrir el turno">×</button>' : '') +
@@ -239,15 +270,17 @@ function renderCaja(){
     '<div class="sep"></div>' +
     '<div class="grid2" style="margin-bottom:12px">' +
       '<div class="field"><label>Nombre del turno</label>' +
-        '<input type="text" id="ceTurno" value="' + esc(nombreTurnoSugerido()) + '" placeholder="Mañana, Tarde…"></div>' +
+        '<input type="text" id="ceTurno" value="' + esc(nombreTurnoSugerido(cerrados.length)) + '" placeholder="Mañana, Tarde…"></div>' +
       '<div class="field"><label>Lo cierra</label>' +
         '<input type="text" value="' + esc(USUARIO ? USUARIO.nombre : '—') + '" disabled></div>' +
     '</div>' +
     '<div class="grid3">' +
       '<div class="field"><label>Fondo inicial de caja</label><input type="number" step="any" id="ceFondo" value="' + fondoSug + '" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
-      '<div class="field"><label>💵 Cambio</label><input type="number" step="any" id="ceCambio" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
-      '<div class="field"><label>💰 Efectivo</label><input type="number" step="any" id="ceEfe" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
+      '<div class="field"><label>💵 Cambio que queda</label><input type="number" step="any" id="ceCambio" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
+      '<div class="field"><label>💰 Efectivo que se saca</label><input type="number" step="any" id="ceEfe" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
     '</div>' +
+    '<div class="small muted" style="margin-top:6px;line-height:1.5">' + origenFondo +
+      ' El <b>cambio que queda</b> en el cajón es el fondo inicial del turno que sigue.</div>' +
     '<div class="tot-row" style="margin-top:8px"><span class="muted">Total contado (cambio + efectivo)</span>' +
       '<b class="mono" id="ceContTxt">' + fmt(0) + '</b></div>' +
     '<div id="ceDif" class="alert info" style="margin-top:12px">Cargá el cambio y el efectivo para ver la diferencia.</div>' +
@@ -415,7 +448,8 @@ function guardarCierre(entra, sale, ventas){
   };
   S.cierres.push(reg);
   save(); refresh();
-  toast('Turno "' + nombre + '" cerrado' + (Math.abs(reg.dif) < 0.005 ? ' — caja justa' : ''));
+  toast('Turno "' + nombre + '" cerrado' + (Math.abs(reg.dif) < 0.005 ? ' — caja justa' : '') +
+        ' · quedan ' + fmt(cambio) + ' de cambio');
 }
 
 /* Reabrir un turno: se borra el cierre y lo que abarcaba vuelve al turno
@@ -584,8 +618,8 @@ function imprimirCierre(id){
       (t && t.gastosEfe ? '<tr><td>Gastos y retiros</td><td align="right">-' + fmt(t.gastosEfe) + '</td></tr>' : '') +
       (t && t.comprasEfe ? '<tr><td>Compras efectivo</td><td align="right">-' + fmt(t.comprasEfe) + '</td></tr>' : '') +
       '<tr><td><b>Efectivo esperado</b></td><td align="right"><b>' + fmt(c.esperado) + '</b></td></tr>' +
-      '<tr><td>Cambio</td><td align="right">' + fmt(c.cambio || 0) + '</td></tr>' +
-      '<tr><td>Efectivo</td><td align="right">' + fmt(c.efectivoCont || 0) + '</td></tr>' +
+      '<tr><td>Cambio que queda</td><td align="right">' + fmt(c.cambio || 0) + '</td></tr>' +
+      '<tr><td>Efectivo que se saca</td><td align="right">' + fmt(c.efectivoCont || 0) + '</td></tr>' +
       '<tr><td><b>Efectivo contado</b></td><td align="right"><b>' + fmt(c.contado) + '</b></td></tr>' +
       '<tr><td><b>Diferencia</b></td><td align="right"><b>' + fmt(c.dif) + '</b></td></tr>' +
     '</table>' +
