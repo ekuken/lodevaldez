@@ -135,8 +135,10 @@ create policy "crear respaldos de su cafe" on public.respaldos
 --  Si otra computadora guardó mientras tanto, avisa en vez de
 --  pisar los datos.
 -- ============================================================
-drop function if exists public.guardar_local(text, jsonb, bigint);
-create function public.guardar_local(
+-- Se reemplaza, NO se borra: un "drop" se lleva puestos los permisos y hay
+-- que acordarse de volver a darlos. Como la firma no cambia, "create or
+-- replace" la deja igual sin tocar nada de lo que depende de ella.
+create or replace function public.guardar_local(
   p_local   text,
   p_datos   jsonb,
   p_version bigint
@@ -145,7 +147,10 @@ returns table (ok boolean, version bigint, datos jsonb)
 language plpgsql
 security definer
 set search_path = public
-as $$
+-- El cuerpo va entre $func$ y no entre $$: algunos editores de SQL parten el
+-- texto en el primer ";" que encuentran y con $$ pelado cortan la función por
+-- la mitad ("syntax error at end of input"). Con la etiqueta no se confunden.
+as $func$
 declare
   v_actual bigint;
 begin
@@ -189,7 +194,7 @@ begin
   return query
     select true, l.version, l.datos from public.locales l where l.id = p_local;
 end;
-$$;
+$func$;
 
 revoke all on function public.guardar_local(text, jsonb, bigint) from public;
 grant execute on function public.guardar_local(text, jsonb, bigint) to authenticated;
