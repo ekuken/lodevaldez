@@ -34,7 +34,9 @@ create table if not exists public.miembros (
 );
 
 -- ---------- 3. Historial de respaldos ----------
--- Cada guardado deja una copia. Sirve para volver atrás si algo se rompe.
+-- Una copia entera del café cada 12 horas, guardadas 30 días (la regla está
+-- en guardar_local, más abajo). Sirve para volver atrás si algo se rompe:
+-- fue lo que permitió recuperar los dos cafés el 7/9/2026.
 create table if not exists public.respaldos (
   id       bigserial primary key,
   local_id text not null references public.locales(id) on delete cascade,
@@ -166,16 +168,23 @@ begin
          actualizado = now()
    where l.id = p_local;
 
-  -- Copia de respaldo, conservando las últimas 200 por café
-  insert into public.respaldos (local_id, datos) values (p_local, p_datos);
-  delete from public.respaldos r
-   where r.local_id = p_local
-     and r.id not in (
-       select id from public.respaldos
+  -- Copia de respaldo cada 12 horas, guardadas 30 días.
+  -- Antes se guardaba una copia POR CADA GUARDADO conservando las últimas
+  -- 200, y eso resultó ser justo lo que no sirve: el 7/9/2026 se perdieron
+  -- los datos a las 20:22 y la última copia buena era de las 19:12. Una hora
+  -- de margen. Con el sistema casi sin uso esas 200 copias cubrían unas 6
+  -- horas; en pleno servicio, guardando cada pocos segundos, menos de una.
+  -- Una cada 12 horas y 30 días de guarda son unas 60 copias que cubren un
+  -- mes entero, y encima ocupan bastante menos.
+  if not exists (
+       select 1 from public.respaldos
         where local_id = p_local
-        order by creado desc
-        limit 200
-     );
+          and creado > now() - interval '12 hours') then
+    insert into public.respaldos (local_id, datos) values (p_local, p_datos);
+    delete from public.respaldos
+     where local_id = p_local
+       and creado < now() - interval '30 days';
+  end if;
 
   return query
     select true, l.version, l.datos from public.locales l where l.id = p_local;

@@ -114,6 +114,12 @@ async function cargarDesdeNube(){
 
 /* Completa los campos del plano en datos guardados con versiones anteriores */
 function migrar(){
+  /* El nombre del café se cae al de fábrica —"Mi Café"— cuando la config
+     llega sin él, y de ahí sale impreso en los tickets. Le corresponde el
+     nombre de este local. Nadie llama "Mi Café" a su café: si dice eso, es
+     que se perdió, no que lo eligieron. */
+  if (local() && (!S.config.nombre || S.config.nombre === 'Mi Café'))
+    S.config.nombre = local().nombre;
   if (!Array.isArray(S.salon.elementos)) S.salon.elementos = [];
   if (!Array.isArray(S.cuentas)) S.cuentas = [];
   if (!Array.isArray(S.pagosCuenta)) S.pagosCuenta = [];
