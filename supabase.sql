@@ -173,23 +173,46 @@ begin
          actualizado = now()
    where l.id = p_local;
 
-  -- Copia de respaldo cada 12 horas, guardadas 30 días.
-  -- Antes se guardaba una copia POR CADA GUARDADO conservando las últimas
-  -- 200, y eso resultó ser justo lo que no sirve: el 7/9/2026 se perdieron
-  -- los datos a las 20:22 y la última copia buena era de las 19:12. Una hora
-  -- de margen. Con el sistema casi sin uso esas 200 copias cubrían unas 6
-  -- horas; en pleno servicio, guardando cada pocos segundos, menos de una.
-  -- Una cada 12 horas y 30 días de guarda son unas 60 copias que cubren un
-  -- mes entero, y encima ocupan bastante menos.
-  if not exists (
-       select 1 from public.respaldos
-        where local_id = p_local
-          and creado > now() - interval '12 hours') then
-    insert into public.respaldos (local_id, datos) values (p_local, p_datos);
-    delete from public.respaldos
-     where local_id = p_local
-       and creado < now() - interval '30 days';
-  end if;
+  -- ---------- Copias de respaldo: corto y largo plazo a la vez ----------
+  -- Las dos reglas simples fallaron, cada una a su manera, el 7/9/2026:
+  --
+  --   "una por guardado, las últimas 200" → en servicio se guarda cada pocos
+  --   segundos, así que 200 copias eran menos de un día de historia. Cuando
+  --   se borraron los datos a las 20:22, la copia buena más vieja era de las
+  --   19:12: una hora de margen para darse cuenta.
+  --
+  --   "una cada 12 horas" → arregló eso, pero dejó de guardar copias
+  --   seguidas. Esa misma noche se borró Valdez a las 23:20 y la última
+  --   copia era de las 21:20: dos horas sin red.
+  --
+  -- Hacen falta las dos cosas, y no se estorban:
+  --   corto plazo → las últimas 50 copias, pase lo que pase. Para deshacer
+  --                 un accidente de hace un rato.
+  --   largo plazo → una por cada franja de 12 horas, durante 30 días. Para
+  --                 volver a como estaba anteayer.
+  -- De cada franja se conserva la copia con MÁS registros, no la más nueva:
+  -- si en esa franja pasó un borrado, lo que hay que guardar es la de antes.
+  insert into public.respaldos (local_id, datos) values (p_local, p_datos);
+
+  delete from public.respaldos r
+   where r.local_id = p_local
+     and r.id not in (
+           select id from public.respaldos
+            where local_id = p_local
+            order by creado desc
+            limit 50
+         )
+     and r.id not in (
+           select distinct on (floor(extract(epoch from creado) / 43200)) id
+             from public.respaldos
+            where local_id = p_local
+              and creado > now() - interval '30 days'
+            order by floor(extract(epoch from creado) / 43200),
+                     jsonb_array_length(coalesce(datos->'pedidos',   '[]'::jsonb)) +
+                     jsonb_array_length(coalesce(datos->'productos', '[]'::jsonb)) +
+                     jsonb_array_length(coalesce(datos->'mesas',     '[]'::jsonb)) desc,
+                     creado desc
+         );
 
   return query
     select true, l.version, l.datos from public.locales l where l.id = p_local;
