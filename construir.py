@@ -20,7 +20,10 @@ def main():
     html = (BASE / 'index.html').read_text(encoding='utf-8')
     css = (BASE / 'estilos.css').read_text(encoding='utf-8')
 
-    html = re.sub(r'\s*<link rel="stylesheet" href="estilos\.css">',
+    # El "?v=N" del final es para que el navegador no se quede con la versión
+    # vieja al actualizar el host; acá adentro no hace falta y hay que sacarlo
+    # para encontrar el archivo.
+    html = re.sub(r'\s*<link rel="stylesheet" href="estilos\.css(\?[^"]*)?">',
                   '\n<style>\n' + css.strip() + '\n</style>', html)
 
     def meter_js(m):
@@ -28,6 +31,7 @@ def main():
         # Los scripts de internet (la librería de la nube) se dejan como están
         if src.startswith('http://') or src.startswith('https://'):
             return m.group(0)
+        src = src.split('?')[0]
         ruta = BASE / src
         if not ruta.exists():
             print('  ! No encuentro', ruta)
