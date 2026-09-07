@@ -625,11 +625,12 @@ function htmlPagoCerrado(p){
     '<button class="btn blk" style="margin-top:10px" onclick="imprimirTicket(\'' + p.id + '\')">🖨 Imprimir ticket</button>';
 }
 
-/* ---------- Cobro en dos pasos ----------
+/* ---------- Cobro: Cobrar → forma de pago → mesa libre ----------
    Antes los medios de pago estaban siempre a la vista y el botón de cobrar
    tomaba el que estuviera marcado; si no había ninguno, cobraba en efectivo
    sin que nadie lo hubiera elegido. Ahora primero se aprieta Cobrar y recién
-   ahí se elige con qué paga, que es el orden en que pasa en el mostrador. */
+   ahí se elige con qué paga, que es el orden en que pasa en el mostrador, y
+   ese toque es el que cierra la mesa: son dos toques, no tres.           */
 
 /* Paso 0: la pantalla normal del carrito */
 function htmlAntesDeCobrar(p){
@@ -699,16 +700,29 @@ function confirmarMover(pid, destino){
   toast('Pedido #' + p.num + ': ' + desde + ' → ' + hasta);
 }
 
-/* Paso 1: ¿con qué paga? */
+/* Paso 2 y último: ¿con qué paga? Tocar la forma de pago cobra y cierra la
+   mesa ahí mismo. Antes había que confirmar con un segundo botón de cobrar,
+   que es un toque de más en cada venta con el cliente esperando adelante y
+   sin nada nuevo para decidir. */
 function htmlElegirMedio(p){
+  const recCred = recargoLinea({ medio: 'credito', base: total(p) });
   return '<div class="sep"></div>' +
     '<div class="row" style="justify-content:space-between;margin-bottom:4px;flex-wrap:nowrap">' +
       '<b>¿Cómo paga los ' + fmt(total(p)) + '?</b>' +
       '<button class="btn xs" onclick="cancelarCobro()">← Volver</button></div>' +
+    '<div class="small muted" style="margin-bottom:2px">Tocá la forma de pago y la mesa queda cobrada.</div>' +
+    /* Última oportunidad de mandar a cocina lo que todavía no salió */
+    (pendientes(p) ? htmlBotonComanda(p) : '') +
     '<div class="pays grande">' + Object.keys(PAGOS).map(k =>
       '<button onclick="elegirMedio(\'' + k + '\')">' + PAGOS[k] + '</button>').join('') +
     '</div>' +
-    '<button class="btn blk sm" onclick="abrirSplit()">🧮 Dividir entre varias formas de pago</button>';
+    (recCred > 0
+      ? '<div class="tot-row small" style="color:var(--warn);margin:-4px 0 8px">' +
+        '<span>Con crédito se suma ' + S.config.recargoCredito + '% de recargo</span>' +
+        '<span class="mono">' + fmt(total(p) + recCred) + '</span></div>'
+      : '') +
+    '<button class="btn blk sm" onclick="cobrarConVuelto()">💵 Efectivo, calculando el vuelto</button>' +
+    '<button class="btn blk sm" style="margin-top:6px" onclick="abrirSplit()">🧮 Dividir entre varias formas de pago</button>';
 }
 
 /* La forma de pago que se está por confirmar, todavía sin guardar en el
@@ -717,8 +731,9 @@ function lineaEnCurso(p){
   return { medio: POS.medio, base: total(p), cuentaId: POS.cuentaId || null };
 }
 
-/* Paso 2: confirmar. Acá aparecen el recargo del crédito, la cuenta a la que
-   se carga o el cálculo del vuelto, según con qué paguen. */
+/* Pantalla de confirmar: queda solo para los dos casos en que falta un dato
+   antes de cerrar la mesa, la cuenta corriente a la que se carga y el
+   efectivo del que hay que sacar el vuelto. */
 function htmlConfirmarPago(p){
   const l = lineaEnCurso(p);
   const rec = recargoLinea(l);
@@ -780,6 +795,19 @@ function elegirMedio(k){
   POS.medio = k; POS.paga = 0;
   /* Si hay una sola cuenta, se elige sola: un toque menos */
   POS.cuentaId = (k === 'cuenta' && S.cuentas.length === 1) ? S.cuentas[0].id : null;
+  /* Elegido el medio ya no falta nada que decidir: se cobra y la mesa queda
+     libre. Lo único que frena es la cuenta corriente cuando hay varias y hay
+     que decir a cuál se le carga el consumo. */
+  if (k === 'cuenta' && !POS.cuentaId) return pintarCart();
+  confirmarCobro();
+}
+
+/* El vuelto es el otro caso en que conviene frenar: hay que anotar con
+   cuánto paga para que la pantalla diga cuánto devolver. Por eso no cuelga
+   del botón de Efectivo, que cobra derecho, sino de uno aparte. */
+function cobrarConVuelto(){
+  const p = pedidoPOS(); if (!p || !p.items.length) return;
+  POS.medio = 'efectivo'; POS.cuentaId = null; POS.paga = 0;
   pintarCart();
 }
 function volverAMedios(){ POS.medio = null; POS.cuentaId = null; POS.paga = 0; pintarCart(); }
