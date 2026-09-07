@@ -143,9 +143,15 @@ function htmlPlano(){
   return h + '</div>';
 }
 
+/* Cuánto del recuadro ocupa el salón. Tiene que ser UN solo número: lo usan
+   el dibujo (cuerpoPlano) y el arrastre (planoDown), y si no coinciden la
+   mesa salta al agarrarla y vuelve a otro lado al soltarla. */
+const PLANO_ESCALA =80
+function planoPC(v, base){ return (v / base * PLANO_ESCALA) + '%'; }
+
 function cuerpoPlano(){
   const W = S.salon.w, H = S.salon.h;
-  const pc = (v, base) => (v / base * 100) + '%';
+  const pc = planoPC;
   let h = '';
 
   S.salon.elementos.forEach(e => {
@@ -335,13 +341,16 @@ function planoDown(e){
   let movido = false;
   const snap = v => Math.round(v / 10) * 10;
 
+  /* El salón ocupa PLANO_ESCALA% del recuadro, así que el dedo recorre menos
+     pantalla de la que mide el salón: sin esto la mesa se adelanta al dedo. */
+  const anchoUtil = r.width * PLANO_ESCALA / 100, altoUtil = r.height * PLANO_ESCALA / 100;
   const move = ev => {
-    const dx = (ev.clientX - sx) / r.width * W, dy = (ev.clientY - sy) / r.height * H;
+    const dx = (ev.clientX - sx) / anchoUtil * W, dy = (ev.clientY - sy) / altoUtil * H;
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) movido = true;
     if (rz){ o.w = Math.max(30, Math.min(W - o.x, snap(ow + dx))); o.h = Math.max(24, Math.min(H - o.y, snap(oh + dy))); }
     else { o.x = Math.max(0, Math.min(W - o.w, snap(ox + dx))); o.y = Math.max(0, Math.min(H - o.h, snap(oy + dy))); }
-    el.style.left = (o.x / W * 100) + '%'; el.style.top = (o.y / H * 100) + '%';
-    el.style.width = (o.w / W * 100) + '%'; el.style.height = (o.h / H * 100) + '%';
+    el.style.left = planoPC(o.x, W); el.style.top = planoPC(o.y, H);
+    el.style.width = planoPC(o.w, W); el.style.height = planoPC(o.h, H);
   };
   const up = () => {
     window.removeEventListener('pointermove', move);
