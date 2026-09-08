@@ -29,42 +29,10 @@ function mostrarLocales(){
 }
 
 function elegirLocal(id){
-  const l = LOCALES.find(x => x.id === id); if (!l) return;
+  if (!LOCALES.some(x => x.id === id)) return;
   LOCAL = id;
   try{ localStorage.setItem(LOCAL_KEY, id); }catch(e){}
-
-  /* Si es la primera vez que se usa este local y quedaron datos del sistema
-     de antes de la división, se pregunta si son de acá.                    */
-  let propios = null, legado = null;
-  try{ propios = localStorage.getItem(KEY()); legado = localStorage.getItem(KEY_LEGADO); }catch(e){}
-  if (!propios && legado) return preguntarLegado(l, legado);
-
   arrancarLocal();
-}
-
-function preguntarLegado(l, legado){
-  $('#login').hidden = true;
-  modal({
-    title: 'Datos del sistema anterior',
-    nofocus: true,
-    body: '<p style="margin:0 0 10px;line-height:1.55">Encontré los datos que ya venías usando: productos, mesas, pedidos, caja e historial.</p>' +
-          '<p style="margin:0;line-height:1.55">¿Son de <b>' + esc(l.nombre) + '</b>?</p>',
-    footer:
-      '<button class="btn" onclick="resolverLegado(false)">No, empezar de cero</button>' +
-      '<button class="btn pri" onclick="resolverLegado(true)">Sí, son de ' + esc(l.nombre) + '</button>'
-  });
-}
-
-function resolverLegado(usar){
-  if (usar){
-    try{
-      localStorage.setItem(KEY(), localStorage.getItem(KEY_LEGADO));
-      localStorage.removeItem(KEY_LEGADO);
-    }catch(e){ toast('No se pudieron copiar los datos anteriores'); }
-  }
-  closeModal();
-  arrancarLocal();
-  if (usar) toast('Datos anteriores cargados en ' + local().nombre);
 }
 
 /* Vuelve a la pantalla de elección de local */

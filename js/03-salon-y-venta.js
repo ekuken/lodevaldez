@@ -50,14 +50,6 @@ function renderMesas(){
     kpi('Ticket promedio', fmt(delDia.length ? ventaDia / delDia.length : 0), 'Sobre los pedidos de hoy') +
   '</div>';
 
-  const bs = bajoStock();
-  if (bs.length){
-    h += '<div class="alert warn" style="margin-bottom:16px">' +
-      '<span>⚠</span><div><b>' + bs.length + ' producto(s) con stock bajo:</b> ' +
-      esc(bs.slice(0, 6).map(p => p.nombre + ' (' + p.stock + ')').join(', ')) +
-      (bs.length > 6 ? ' y ' + (bs.length - 6) + ' más' : '') +
-      ' — <a href="#" onclick="go(\'productos\');return false">ver productos</a></div></div>';
-  }
 
   const paraLlevar = abiertos.filter(p => p.tipo === 'mostrador');
   if (paraLlevar.length){
@@ -528,9 +520,9 @@ function pintarProds(){
   const el = $('#posProds'); if (!el) return;
   if (!list.length){ el.innerHTML = '<div class="empty small">Sin resultados. <a href="#" onclick="closeModal();go(\'productos\');return false">Crear productos</a></div>'; return; }
   el.innerHTML = list.map(p =>
-    '<button class="prod' + (p.ctrl && p.stock <= 0 ? ' sinstock' : '') + '" onclick="addItem(\'' + p.id + '\')">' +
+    '<button class="prod" onclick="addItem(\'' + p.id + '\')">' +
       '<div class="pn">' + esc(p.nombre) + '</div>' +
-      '<div class="ps">' + esc(p.cat || '') + (p.ctrl ? ' · stock ' + p.stock : '') + '</div>' +
+      '<div class="ps">' + esc(p.cat || '') + '</div>' +
       '<div class="pp">' + fmt(p.precio) + '</div>' +
     '</button>').join('');
 }
@@ -1005,7 +997,6 @@ function finalizarCobro(p, lineas){
   p.pago = p.pagos.length === 1 ? p.pagos[0].medio : 'mixto';
   const lc = p.pagos.find(l => l.medio === 'cuenta');
   p.cuentaId = lc ? lc.cuentaId : null;
-  if (S.config.descontarStock) descontarStock(p, -1);
   p.estado = 'cerrado';
   p.cerrado = new Date().toISOString();
   p.cobradoPor = USUARIO ? USUARIO.nombre : '';
@@ -1020,9 +1011,3 @@ function finalizarCobro(p, lineas){
   toast('✓ Cobrado ' + fmt(totalCobrado(p)) + (vuelto > 0 ? ' · Vuelto ' + fmt(vuelto) : ''));
 }
 
-function descontarStock(p, signo){
-  p.items.forEach(i => {
-    const pr = prod(i.pid);
-    if (pr && pr.ctrl) pr.stock = Math.round((pr.stock + signo * i.cant) * 100) / 100;
-  });
-}

@@ -1,5 +1,5 @@
 /* ============================================================
-   PRODUCTOS — alta, edición, baja y stock
+   PRODUCTOS — alta, edición y baja
    ============================================================ */
 
 let PF = { q: '', cat: 'Todas', solo: 'todos' };
@@ -9,37 +9,26 @@ function renderProductos(){
              '<button class="btn" onclick="importarProductos()">⬆ Importar archivo</button>' +
              '<button class="btn pri" onclick="formProducto()">＋ Nuevo producto</button>');
 
-  const bs = bajoStock();
   const cats = ['Todas'].concat([...new Set(S.productos.map(p => p.cat || 'Sin categoría'))].sort());
 
   let list = S.productos.slice();
   if (PF.cat !== 'Todas') list = list.filter(p => (p.cat || 'Sin categoría') === PF.cat);
   if (PF.q) list = list.filter(p => p.nombre.toLowerCase().includes(PF.q) || (p.cat || '').toLowerCase().includes(PF.q));
-  if (PF.solo === 'bajo') list = list.filter(p => p.ctrl && p.stock <= p.stockMin);
   if (PF.solo === 'inactivos') list = list.filter(p => !p.activo);
   if (PF.solo === 'activos') list = list.filter(p => p.activo);
   list.sort((a, b) => (a.cat || '').localeCompare(b.cat || '', 'es') || a.nombre.localeCompare(b.nombre, 'es'));
 
-  const valorStock = S.productos.filter(p => p.ctrl).reduce((a, p) => a + p.stock * p.costo, 0);
 
   let h = '<div class="kpis" style="margin-bottom:18px">' +
     kpi('Productos', String(S.productos.length), S.productos.filter(p => p.activo).length + ' activos en la carta') +
     kpi('Categorías', String(cats.length - 1), 'Agrupaciones de la carta') +
-    kpi('Stock bajo', String(bs.length), 'Productos a reponer') +
-    kpi('Valor del stock', fmt(valorStock), 'Valuado a costo') +
   '</div>';
-
-  if (bs.length){
-    h += '<div class="alert warn" style="margin-bottom:16px"><span>⚠</span><div><b>Reponer:</b> ' +
-      bs.map(p => esc(p.nombre) + ' <span class="mono">(' + p.stock + ' / mín. ' + p.stockMin + ')</span>').join(' · ') +
-      '</div></div>';
-  }
 
   h += '<div class="card"><div class="hd">' +
     '<h3>Carta</h3>' +
     '<div class="tabs">' +
-      ['todos','activos','bajo','inactivos'].map(k => '<button class="' + (PF.solo === k ? 'on' : '') + '" onclick="PF.solo=\'' + k + '\';refresh()">' +
-        ({todos:'Todos', activos:'Activos', bajo:'Stock bajo', inactivos:'Inactivos'})[k] + '</button>').join('') +
+      ['todos','activos','inactivos'].map(k => '<button class="' + (PF.solo === k ? 'on' : '') + '" onclick="PF.solo=\'' + k + '\';refresh()">' +
+        ({todos:'Todos', activos:'Activos', inactivos:'Inactivos'})[k] + '</button>').join('') +
     '</div>' +
     '<div class="sp" style="flex:1"></div>' +
     '<select style="width:auto" onchange="PF.cat=this.value;refresh()">' +
@@ -52,21 +41,16 @@ function renderProductos(){
     h += vacio('☕', 'No hay productos que coincidan', 'Creá uno con el botón “＋ Nuevo producto”.');
   } else {
     h += '<div class="tbl-wrap"><table><thead><tr>' +
-      '<th>Producto</th><th>Categoría</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Margen</th><th>Stock</th><th>Estado</th><th></th>' +
+      '<th>Producto</th><th>Categoría</th><th class="num">Precio</th><th class="num">Costo</th><th class="num">Margen</th><th>Estado</th><th></th>' +
       '</tr></thead><tbody>' +
       list.map(p => {
         const mg = p.precio ? Math.round((p.precio - p.costo) / p.precio * 100) : 0;
-        const bajo = p.ctrl && p.stock <= p.stockMin;
         return '<tr>' +
           '<td><b>' + esc(p.nombre) + '</b></td>' +
           '<td class="small muted">' + esc(p.cat || '—') + '</td>' +
           '<td class="num"><b>' + fmt(p.precio) + '</b></td>' +
           '<td class="num muted">' + fmt(p.costo) + '</td>' +
           '<td class="num"><span class="pill ' + (mg >= 50 ? 'ok' : mg >= 25 ? 'warn' : 'bad') + '">' + mg + '%</span></td>' +
-          '<td>' + (p.ctrl
-              ? '<span class="mono ' + (bajo ? 'pill bad' : '') + '">' + p.stock + '</span> <span class="small muted">mín. ' + p.stockMin + '</span>' +
-                ' <button class="btn xs" onclick="formStock(\'' + p.id + '\')">±</button>'
-              : '<span class="small muted">sin control</span>') + '</td>' +
           '<td>' + (p.activo ? '<span class="pill ok">Activo</span>' : '<span class="pill gray">Inactivo</span>') + '</td>' +
           '<td class="row" style="flex-wrap:nowrap;gap:4px">' +
             '<button class="btn xs" onclick="formProducto(\'' + p.id + '\')">Editar</button>' +
@@ -97,13 +81,6 @@ function formProducto(id){
         '<div class="field"><label>Costo</label><input type="number" step="any" min="0" id="fCos" value="' + (p ? p.costo : 0) + '"></div>' +
       '</div>' +
       '<div class="sep"></div>' +
-      '<label class="chk"><input type="checkbox" id="fCtrl" ' + (!p || p.ctrl ? 'checked' : '') + ' onchange="document.getElementById(\'stkBox\').classList.toggle(\'hide\',!this.checked)">' +
-        ' Controlar stock de este producto</label>' +
-      '<div class="grid2 ' + (p && !p.ctrl ? 'hide' : '') + '" id="stkBox" style="margin-top:12px">' +
-        '<div class="field"><label>Stock actual</label><input type="number" step="any" id="fStk" value="' + (p ? p.stock : 0) + '"></div>' +
-        '<div class="field"><label>Stock mínimo (aviso)</label><input type="number" step="any" id="fMin" value="' + (p ? p.stockMin : 5) + '"></div>' +
-      '</div>' +
-      '<div class="sep"></div>' +
       '<label class="chk"><input type="checkbox" id="fAct" ' + (!p || p.activo ? 'checked' : '') + '> Mostrar en la pantalla de venta</label>',
     footer: '<button class="btn" data-close>Cancelar</button><button class="btn pri" id="fOk">' + (p ? 'Guardar cambios' : 'Crear producto') + '</button>'
   });
@@ -113,7 +90,6 @@ function formProducto(id){
     const o = {
       nombre: nom, cat: $('#fCat').value.trim() || 'Sin categoría',
       precio: num($('#fPre').value), costo: num($('#fCos').value),
-      ctrl: $('#fCtrl').checked, stock: num($('#fStk').value), stockMin: num($('#fMin').value),
       activo: $('#fAct').checked
     };
     if (p) Object.assign(p, o);
@@ -133,34 +109,11 @@ function borrarProducto(id){
     }, 'Borrar producto');
 }
 
-function formStock(id){
-  const p = prod(id); if (!p) return;
-  modal({
-    title: 'Ajustar stock — ' + esc(p.nombre),
-    body:
-      '<div class="row" style="margin-bottom:12px"><span class="muted">Stock actual:</span> <b class="mono" style="font-size:19px">' + p.stock + '</b></div>' +
-      '<div class="grid2">' +
-        '<div class="field"><label>Operación</label><select id="sOp">' +
-          '<option value="sumar">Sumar (ingreso)</option><option value="restar">Restar (merma / rotura)</option><option value="fijar">Fijar valor exacto</option>' +
-        '</select></div>' +
-        '<div class="field"><label>Cantidad</label><input type="number" step="any" id="sCant" value="1"></div>' +
-      '</div>' +
-      '<div class="field" style="margin-top:12px"><label>Stock mínimo</label><input type="number" step="any" id="sMin" value="' + p.stockMin + '"></div>',
-    footer: '<button class="btn" data-close>Cancelar</button><button class="btn pri" id="sOk">Aplicar</button>'
-  });
-  $('#sOk').onclick = () => {
-    const c = num($('#sCant').value), op = $('#sOp').value;
-    p.stock = op === 'sumar' ? p.stock + c : op === 'restar' ? p.stock - c : c;
-    p.stock = Math.round(p.stock * 100) / 100;
-    p.stockMin = num($('#sMin').value);
-    save(); closeModal(); refresh(); toast('Stock actualizado: ' + p.stock);
-  };
-}
 
 function exportarProductos(){
-  const rows = [['Producto','Categoria','Precio','Costo','Margen %','Controla stock','Stock','Stock minimo','Activo']];
+  const rows = [['Producto','Categoria','Precio','Costo','Margen %','Activo']];
   S.productos.forEach(p => rows.push([p.nombre, p.cat, p.precio, p.costo,
-    p.precio ? Math.round((p.precio - p.costo) / p.precio * 100) : 0, p.ctrl ? 'Si' : 'No', p.stock, p.stockMin, p.activo ? 'Si' : 'No']));
+    p.precio ? Math.round((p.precio - p.costo) / p.precio * 100) : 0, p.activo ? 'Si' : 'No']));
   descargar('﻿' + rows.map(r => r.map(c => '"' + String(c).replace(/"/g, '""') + '"').join(';')).join('\n'),
     'productos_' + hoy() + '.csv', 'text/csv;charset=utf-8');
   toast('CSV descargado');
@@ -233,8 +186,7 @@ function importarProductos(){
       '<input type="file" id="impProd" accept=".csv,.txt,text/csv,text/plain">' +
       '<div class="alert info small" style="margin-top:12px"><span>i</span><div>' +
         'Conviene que la primera fila sea el encabezado con el nombre de cada columna. Se reconocen ' +
-        '<b>nombre</b> (o producto), <b>categoría</b>, <b>precio</b>, <b>costo</b>, <b>stock</b>, ' +
-        '<b>control de stock</b> y <b>activo</b>; las demás columnas se ignoran. ' +
+        '<b>nombre</b> (o producto), <b>categoría</b>, <b>precio</b>, <b>costo</b> y <b>activo</b>; las demás columnas se ignoran. ' +
         'Si el archivo no tiene encabezado se toman las tres primeras columnas como nombre, categoría y precio.' +
       '</div></div>' +
       '<div id="impPrev"></div>',
@@ -283,17 +235,15 @@ function procesarArchivoProductos(txt){
 
   let iNom = buscar('nombre', 'producto', 'articulo', 'detalle', 'descripcion');
   const cabecera = iNom >= 0;
-  let iCat, iPre, iCos, iStk, iCtl, iAct, datos;
+  let iCat, iPre, iCos, iAct, datos;
   if (cabecera){
     iCat = buscar('categoria', 'rubro', 'familia', 'grupo');
     iPre = buscar('precio', 'precio venta', 'precio de venta', 'pvp', 'importe', 'precio unitario');
     iCos = buscar('costo', 'precio costo', 'precio de costo');
-    iStk = buscar('stock', 'cantidad', 'existencia', 'existencias');
-    iCtl = buscar('control de stock', 'controla stock', 'controlar stock');
     iAct = buscar('activo', 'habilitado', 'estado');
     datos = filas.slice(1);
   } else {
-    iNom = 0; iCat = 1; iPre = 2; iCos = -1; iStk = -1; iCtl = -1; iAct = -1;
+    iNom = 0; iCat = 1; iPre = 2; iCos = -1; iAct = -1;
     datos = filas;
   }
   const dato = (f, i) => (i >= 0 && i < f.length ? f[i] : '');
@@ -313,9 +263,6 @@ function procesarArchivoProductos(txt){
       cat: dato(f, iCat).trim() || 'Sin categoría',
       precio: numArchivo(dato(f, iPre)),
       costo: numArchivo(dato(f, iCos)),
-      stock: Math.max(0, numArchivo(dato(f, iStk))),
-      stockMin: 0,
-      ctrl: boolArchivo(dato(f, iCtl), false),
       activo: boolArchivo(dato(f, iAct), true)
     };
     IMP.todos.push(p);
@@ -343,11 +290,9 @@ function pintarPrevioImportacion(){
       (IMP.cabecera ? '' : '<span class="pill info">Sin encabezado: se leyó nombre, categoría y precio</span>') +
     '</div>' +
     '<div class="tbl-wrap" style="border:1px solid var(--line);border-radius:var(--r)">' +
-      '<table><thead><tr><th>Producto</th><th>Categoría</th><th class="num">Precio</th>' +
-      '<th class="num">Stock</th><th>Activo</th></tr></thead><tbody>' +
+      '<table><thead><tr><th>Producto</th><th>Categoría</th><th class="num">Precio</th><th>Activo</th></tr></thead><tbody>' +
       muestra.map(p => '<tr><td><b>' + esc(p.nombre) + '</b></td><td>' + esc(p.cat) + '</td>' +
         '<td class="num">' + fmt(p.precio) + '</td>' +
-        '<td class="num">' + (p.ctrl ? p.stock : '—') + '</td>' +
         '<td>' + (p.activo ? '<span class="pill ok">Sí</span>' : '<span class="pill gray">No</span>') + '</td></tr>').join('') +
       '</tbody></table></div>' +
     (IMP.todos.length > muestra.length

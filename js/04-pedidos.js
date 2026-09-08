@@ -320,8 +320,7 @@ function guardarPagoPedido(id){
 function anularCobrado(id){
   if (!soloAdmin('anular un pedido ya cobrado')) return;
   const p = S.pedidos.find(x => x.id === id); if (!p) return;
-  confirmar('¿Anular el <b>pedido #' + p.num + '</b> ya cobrado? Se descuenta de la caja y se devuelve el stock.', () => {
-    if (S.config.descontarStock) descontarStock(p, +1);
+  confirmar('¿Anular el <b>pedido #' + p.num + '</b> ya cobrado? Se descuenta de la caja.', () => {
     p.estado = 'anulado';
     save(); closeModal(); refresh(); toast('Pedido #' + p.num + ' anulado');
   }, 'Anular');

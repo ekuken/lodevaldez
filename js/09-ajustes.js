@@ -24,8 +24,7 @@ function renderAjustes(){
     '<div class="field" style="margin-top:12px"><label>Pie del ticket</label><input type="text" id="cfPie" value="' + esc(c.pieTicket) + '"></div>' +
     '<div class="grid2" style="margin-top:12px">' +
       '<div class="field"><label>Próximo N° de pedido</label><input type="number" id="cfNum" value="' + c.nextNum + '" min="1"></div>' +
-      '<div class="field"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="cfStk" ' + (c.descontarStock ? 'checked' : '') + '> Descontar stock al cobrar</label>' +
-        '<label class="chk" style="margin-top:8px"><input type="checkbox" id="cfCom" ' + (c.comandaImprime ? 'checked' : '') + '> Imprimir al enviar el pedido</label></div>' +
+      '<div class="field"><label>&nbsp;</label><label class="chk"><input type="checkbox" id="cfCom" ' + (c.comandaImprime ? 'checked' : '') + '> Imprimir al enviar el pedido</label></div>' +
     '</div>' +
     '<div class="field" style="margin-top:12px"><label>Ancho del papel de la impresora</label>' +
       '<select id="cfPapel">' +
@@ -110,8 +109,8 @@ function renderAjustes(){
     '<p style="margin:0 0 8px"><b>Gastos y retiros.</b> En la Caja, abajo, registrás lo que sale del día que no es compra a proveedor: sueldos, servicios, alquiler, un retiro de efectivo o un ingreso extra. Lo que sale en efectivo se descuenta del efectivo esperado, así el arqueo cierra bien.</p>' +
     '<p style="margin:0 0 8px"><b>Cuentas.</b> Sirve para el fiado y los clientes habituales. Creás una cuenta con el nombre que quieras (una persona, una oficina, el personal) y, al cobrar una mesa, elegís “Cuenta” como forma de pago y seleccionás cuál: el consumo queda cargado ahí en lugar de entrar a la caja. En la sección Cuentas ves el listado completo con lo consumido, lo pagado y el saldo de cada una, y entrando en “Ver consumos” tenés el detalle pedido por pedido con el saldo acumulado, que se puede imprimir o exportar. Cuando te pagan, usás “Cobrar”: elegís el monto (viene el saldo completo por defecto) y la forma de pago, y ese ingreso sí entra en la caja del día. También podés ponerle un límite de crédito a cada cuenta para que avise cuando lo supera.</p>' +
     '<p style="margin:0 0 8px"><b>Caja.</b> Muestra las ventas del día elegido, el desglose por medio de pago, las ventas por hora y los más vendidos. Abajo se arquea la caja por turno: se cierra la mañana y después la tarde, y cada cierre abarca desde el anterior hasta ese momento. Al cerrar anotás el <b>cambio que queda</b> en el cajón y el <b>efectivo que se saca</b>; el sistema suma los dos, lo compara con lo esperado y marca la diferencia. El <b>fondo inicial</b> viene puesto solo: es el cambio que dejó el turno anterior, sea de más temprano o del último cierre de un día pasado. Cada arqueo se puede imprimir, y un administrador puede reabrir un turno mal cargado.</p>' +
-    '<p style="margin:0 0 8px"><b>Productos.</b> Alta, edición y baja. Si marcás “controlar stock”, cada venta descuenta unidades y el sistema avisa cuando llega al mínimo. Con el botón “±” ajustás stock por mermas o roturas.</p>' +
-    '<p style="margin:0"><b>Proveedores.</b> Agenda de contactos y registro de compras. Al cargar una compra asociada a un producto, el stock sube solo y podés actualizar el costo con el precio pagado.</p>' +
+    '<p style="margin:0 0 8px"><b>Productos.</b> Alta, edición y baja de la carta: nombre, categoría, precio y costo. El margen se calcula solo. Se pueden cargar de a muchos desde un archivo con “Importar archivo”.</p>' +
+    '<p style="margin:0"><b>Proveedores.</b> Agenda de contactos y registro de compras. Al cargar una compra asociada a un producto podés actualizar su costo con el precio pagado.</p>' +
   '</div></div>';
 
   $('#v-ajustes').innerHTML = h;
@@ -125,7 +124,6 @@ function guardarConfig(){
   S.config.telefono = $('#cfTel').value.trim();
   S.config.pieTicket = $('#cfPie').value.trim();
   S.config.nextNum = Math.max(1, parseInt($('#cfNum').value, 10) || 1);
-  S.config.descontarStock = $('#cfStk').checked;
   S.config.comandaImprime = $('#cfCom').checked;
   S.config.propinaOn = $('#cfPropOn').checked;
   S.config.propina = Math.max(0, num($('#cfProp').value));

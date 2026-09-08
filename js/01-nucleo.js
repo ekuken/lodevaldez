@@ -11,7 +11,6 @@ const LOCALES = [
   { id: 'eva',    nombre: 'Evacafé',      ico: '🍰' }
 ];
 const LOCAL_KEY  = 'cafe_local_v1';
-const KEY_LEGADO = 'cafe_sistema_v1';      /* datos de antes de dividir el sistema */
 
 let LOCAL = null;
 function local(){ return LOCALES.find(l => l.id === LOCAL) || null; }
@@ -29,7 +28,6 @@ const DEFAULT_STATE = {
     telefono: '',
     pieTicket: '¡Gracias por su visita!',
     nextNum: 1,
-    descontarStock: true,
     comandaImprime: true,
     anchoTicket: 80,       /* mm de papel de la impresora de ESTE café */
 
@@ -204,24 +202,23 @@ function seed(){
     { id: uid(), tipo: 'sector',   x: 420, y: 90,  w: 260, h: 40,  texto: 'Salón' }
   ];
   const P = [
-    ['Café espresso','Cafetería',1800,600,0,0,false],
-    ['Café con leche','Cafetería',2200,750,0,0,false],
-    ['Cortado','Cafetería',1900,650,0,0,false],
-    ['Capuchino','Cafetería',2600,900,0,0,false],
-    ['Submarino','Cafetería',2900,1100,0,0,false],
-    ['Té / Mate cocido','Cafetería',1600,400,0,0,false],
-    ['Medialuna','Panadería',900,350,40,12,true],
-    ['Tostado J&Q','Panadería',3800,1500,20,6,true],
-    ['Budín de limón','Panadería',2400,900,12,4,true],
-    ['Alfajor de maicena','Panadería',1500,600,25,8,true],
-    ['Agua mineral 500ml','Bebidas',1500,600,36,12,true],
-    ['Gaseosa línea Coca','Bebidas',2000,850,30,12,true],
-    ['Jugo exprimido','Bebidas',2600,1000,0,0,false],
-    ['Cerveza artesanal','Bebidas',4200,1900,18,6,true]
+    ['Café espresso','Cafetería',1800,600],
+    ['Café con leche','Cafetería',2200,750],
+    ['Cortado','Cafetería',1900,650],
+    ['Capuchino','Cafetería',2600,900],
+    ['Submarino','Cafetería',2900,1100],
+    ['Té / Mate cocido','Cafetería',1600,400],
+    ['Medialuna','Panadería',900,350],
+    ['Tostado J&Q','Panadería',3800,1500],
+    ['Budín de limón','Panadería',2400,900],
+    ['Alfajor de maicena','Panadería',1500,600],
+    ['Agua mineral 500ml','Bebidas',1500,600],
+    ['Gaseosa línea Coca','Bebidas',2000,850],
+    ['Jugo exprimido','Bebidas',2600,1000],
+    ['Cerveza artesanal','Bebidas',4200,1900]
   ];
   P.forEach(p => S.productos.push({
-    id: uid(), nombre: p[0], cat: p[1], precio: p[2], costo: p[3],
-    stock: p[4], stockMin: p[5], ctrl: p[6], activo: true
+    id: uid(), nombre: p[0], cat: p[1], precio: p[2], costo: p[3], activo: true
   }));
   S.proveedores.push({ id: uid(), nombre: 'Café Torrado S.A.', rubro: 'Café en grano', contacto: 'Marcela Ruiz', tel: '11 4455-6677', email: 'ventas@cafetorrado.com', dir: '', notas: 'Entrega los martes' });
   S.proveedores.push({ id: uid(), nombre: 'Panadería El Trigal', rubro: 'Facturas y panificados', contacto: 'Jorge Díaz', tel: '11 5566-7788', email: 'pedidos@eltrigal.com', dir: '', notas: 'Pedido antes de las 18 h' });
@@ -281,7 +278,6 @@ const ESTADOS_MESA = {
 function pedidoAbiertoDeMesa(mid){ return S.pedidos.find(p => p.estado === 'abierto' && p.mesaId === mid); }
 function prod(id){ return S.productos.find(p => p.id === id); }
 function prov(id){ return S.proveedores.find(p => p.id === id); }
-function bajoStock(){ return S.productos.filter(p => p.activo && p.ctrl && p.stock <= p.stockMin); }
 
 /* ---------- Usuarios y permisos ---------- */
 function usuariosPorDefecto(){
@@ -421,7 +417,7 @@ const VISTAS = {
   pedidos:     { t:'Pedidos',     s:'Historial y filtros' },
   caja:        { t:'Caja',        s:'Ventas y cierre del día' },
   cuentas:     { t:'Cuentas',     s:'Cuentas corrientes y consumos' },
-  productos:   { t:'Productos',   s:'Carta y control de stock' },
+  productos:   { t:'Productos',   s:'Carta y precios' },
   proveedores: { t:'Proveedores', s:'Contactos y compras' },
   ajustes:     { t:'Ajustes',     s:'Configuración y respaldos' }
 };
@@ -443,8 +439,6 @@ function refresh(){
     : '';
   const ocup = S.pedidos.filter(p => p.estado === 'abierto').length;
   const bMesas = $('#badgeMesas'); bMesas.textContent = ocup; bMesas.classList.toggle('hide', ocup === 0);
-  const bs = bajoStock().length;
-  const bStock = $('#badgeStock'); bStock.textContent = bs; bStock.classList.toggle('hide', bs === 0);
   $('#brandName').textContent = S.config.nombre;
   const bsub = $('#brandSub'); if (bsub && local()) bsub.textContent = local().nombre;
   $('#footDate').textContent = cap(fechaLarga(hoy()));

@@ -169,7 +169,7 @@ function formCompra(provId){
       '<div id="cItems"></div>' +
       '<div class="tot-row big" style="justify-content:flex-end;gap:18px"><span>Total</span><span id="cTot">—</span></div>' +
       '<label class="chk" style="margin-top:10px"><input type="checkbox" id="cUpd" checked> Actualizar el costo de los productos con el de esta compra</label>' +
-      '<div class="alert info small" style="margin-top:10px"><span>ℹ</span><div>Los ítems asociados a un producto con control de stock suman unidades automáticamente.</div></div>',
+      '',
     footer: '<button class="btn" data-close>Cancelar</button><button class="btn pri" id="cOk">💾 Guardar compra</button>'
   });
   pintarFilasCompra();
@@ -197,8 +197,8 @@ function pintarFilasCompra(){
     '<div class="row" style="flex-wrap:nowrap;gap:8px;margin-bottom:8px;align-items:flex-end">' +
       '<div class="field grow"><label>' + (i === 0 ? 'Producto' : '') + '</label>' +
         '<select onchange="setFila(' + i + ',\'pid\',this.value)">' +
-          '<option value="">— Otro concepto (sin stock) —</option>' +
-          ops.map(p => '<option value="' + p.id + '" ' + (it.pid === p.id ? 'selected' : '') + '>' + esc(p.nombre) + (p.ctrl ? ' · stock ' + p.stock : '') + '</option>').join('') +
+          '<option value="">— Otro concepto —</option>' +
+          ops.map(p => '<option value="' + p.id + '" ' + (it.pid === p.id ? 'selected' : '') + '>' + esc(p.nombre) + '</option>').join('') +
         '</select></div>' +
       (it.pid ? '' :
         '<div class="field grow"><label>' + (i === 0 ? 'Descripción' : '') + '</label>' +
@@ -229,7 +229,6 @@ function guardarCompra(){
   items.forEach(i => {
     if (!i.pid) return;
     const p = prod(i.pid); if (!p) return;
-    if (p.ctrl) p.stock = Math.round((p.stock + i.cant) * 100) / 100;
     if (upd && i.costo > 0) p.costo = i.costo;
   });
   S.compras.push(c); save(); closeModal(); PV.tab = 'compras'; refresh();
@@ -238,8 +237,7 @@ function guardarCompra(){
 
 function borrarCompra(id){
   const c = S.compras.find(x => x.id === id); if (!c) return;
-  confirmar('¿Borrar esta compra de <b>' + fmt(c.total) + '</b>? Se descuenta del stock lo que había sumado.', () => {
-    c.items.forEach(i => { if (!i.pid) return; const p = prod(i.pid); if (p && p.ctrl) p.stock = Math.round((p.stock - i.cant) * 100) / 100; });
+  confirmar('¿Borrar esta compra de <b>' + fmt(c.total) + '</b>?', () => {
     S.compras = S.compras.filter(x => x.id !== id);
     save(); refresh(); toast('Compra borrada');
   }, 'Borrar compra');

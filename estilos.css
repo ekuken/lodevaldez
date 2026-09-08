@@ -249,7 +249,6 @@ tbody tr:hover{background:var(--panel-2)}
 .prod .pn{font-weight:600;font-size:13.5px;line-height:1.25}
 .prod .pp{font-weight:700;color:var(--brand);margin-top:auto;font-variant-numeric:tabular-nums}
 .prod .ps{font-size:11px;color:var(--ink-3)}
-.prod.sinstock{opacity:.5}
 .cart{flex:0 0 auto;display:flex;flex-direction:column;overflow:visible;padding:12px;min-height:70px}
 .ci{display:flex;gap:9px;align-items:center;padding:8px 0;border-bottom:1px dashed var(--line)}
 .ci:last-child{border-bottom:0}

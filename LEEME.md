@@ -1,7 +1,7 @@
 # Sistema de Café — proyecto para Visual Studio Code
 
 Sistema de gestión para cafeterías: plano del salón con colores por estado,
-punto de venta, pedidos, caja, cuentas corrientes, productos con stock,
+punto de venta, pedidos, caja, cuentas corrientes, productos,
 proveedores y usuarios. Corre en el navegador, sin instalar nada ni internet.
 
 ## Archivos
@@ -14,7 +14,7 @@ proveedores y usuarios. Corre en el navegador, sin instalar nada ni internet.
       03-salon-y-venta.js   plano del salón, mesas y punto de venta
       04-pedidos.js         historial con filtros y exportación
       05-caja.js            caja diaria, gastos, cierre e impresiones
-      06-productos.js       carta y control de stock
+      06-productos.js       carta y precios
       07-proveedores.js     proveedores y compras
       08-cuentas.js         cuentas corrientes
       09-ajustes.js         configuración, respaldos y ayuda
