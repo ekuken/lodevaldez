@@ -3,7 +3,17 @@
    ============================================================ */
 
 let F = { desde: '', hasta: '', estado: 'todos', pago: 'todos', mesa: 'todas', mozo: 'todos', q: '', limit: 100 };
-F.desde = F.hasta = hoy();
+F.desde = F.hasta = F.dia = hoy();
+
+/* El mismo problema que la caja: la computadora del café no se apaga y el
+   filtro se fijaba una sola vez al cargar, así que a la mañana siguiente
+   "los pedidos de hoy" seguían siendo los de ayer y la lista salía vacía.
+   Solo se mueve sola si estaba mirando el día de hoy; un rango elegido a
+   mano se respeta (ver alDiaCAJA en 05-caja.js). */
+function alDiaF(){
+  if (F.desde === F.dia && F.hasta === F.dia && F.dia !== hoy()) F.desde = F.hasta = hoy();
+  F.dia = hoy();
+}
 
 function fechaPedido(p){ return dkey(p.cerrado || p.abierto); }
 
@@ -51,6 +61,7 @@ function aniosDisponibles(){
 }
 
 function renderPedidos(){
+  alDiaF();
   setActions('<button class="btn" onclick="exportarCSV()">⬇ Exportar CSV</button>' +
              '<button class="btn pri" onclick="go(\'mesas\')">＋ Nuevo pedido</button>');
 

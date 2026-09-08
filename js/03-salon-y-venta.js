@@ -989,7 +989,6 @@ function enviarComanda(){
   const p = pedidoPOS(); if (!p || !p.items.length) return toast('El pedido está vacío');
   const nuevos = p.items.filter(i => !i.enviado);
   const reimprime = nuevos.length === 0;
-  const paraImprimir = reimprime ? p.items : nuevos;
   p.items.forEach(i => i.enviado = true);
   p.comanda = new Date().toISOString();
   save(); pintarCart();

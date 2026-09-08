@@ -2,7 +2,24 @@
    CAJA — resumen diario, cierre y tickets
    ============================================================ */
 
-let CAJA = { fecha: hoy() };
+/* "dia" es el hoy() que corría cuando se fijó la fecha; sirve para saber si
+   la pantalla se quedó dormida de un día para el otro (ver alDiaCAJA). */
+let CAJA = { fecha: hoy(), dia: hoy() };
+
+/* ---------- La pantalla amanece con la fecha de anoche ----------
+   En el café nadie cierra el navegador: la computadora sigue mostrando la
+   página de ayer. CAJA.fecha se fijaba una sola vez al cargar, así que
+   pasada la medianoche la caja seguía parada en el día anterior mientras
+   la pantalla de Mesas —que recalcula hoy() en cada dibujado— ya mostraba
+   el día nuevo. Las ventas del día estaban cargadas, pero en la caja no
+   aparecían, y la única forma de destrabarlo era apretar F5. Pasó el
+   8/9/2026 con una sola computadora en uso.
+   Si se eligió otra fecha a mano, se la respeta: solo se mueve sola la
+   pantalla que estaba mirando "hoy". */
+function alDiaCAJA(){
+  if (CAJA.fecha === CAJA.dia && CAJA.dia !== hoy()) CAJA.fecha = hoy();
+  CAJA.dia = hoy();
+}
 
 /* ============================================================
    TURNOS
@@ -109,6 +126,7 @@ function moverDia(d){
 }
 
 function renderCaja(){
+  alDiaCAJA();
   const f = CAJA.fecha;
   setActions(
     '<button class="btn sm" onclick="moverDia(-1)">←</button>' +

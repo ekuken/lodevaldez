@@ -150,8 +150,18 @@ function importarBackup(inp){
       if (!d || !Array.isArray(d.productos)) throw new Error('formato');
       confirmar('Se van a <b>reemplazar todos los datos actuales</b> por los del respaldo (' +
         (d.pedidos || []).length + ' pedidos, ' + d.productos.length + ' productos). ¿Continuar?', () => {
+          /* Restaurar es reemplazar todo a propósito, y hay que decirlo en
+             los dos idiomas: NUBE.borradoAdrede para que el candado de esta
+             computadora no lo frene, y el contador que viaja con los datos
+             para que la otra no devuelva lo que el respaldo no traía. Sin
+             esto, restaurar un respaldo viejo se deshacía solo. El contador
+             se toma del estado que se está por reemplazar, no del archivo:
+             el respaldo trae el número de cuando se hizo, que es más bajo. */
+          if (typeof NUBE !== 'undefined') NUBE.borradoAdrede = true;
+          const marcaRestaura = (typeof nubeBorradosAdrede === 'function' ? nubeBorradosAdrede(S) : 0) + 1;
           S = Object.assign(structuredClone(DEFAULT_STATE), d);
           S.config = Object.assign({}, DEFAULT_STATE.config, d.config || {});
+          S.config.borradosAdrede = marcaRestaura;
           save(); closeModal(); refresh(); toast('Respaldo restaurado');
         }, 'Restaurar');
     }catch(err){ toast('El archivo no es un respaldo válido'); }
