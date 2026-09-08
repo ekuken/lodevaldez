@@ -147,12 +147,30 @@ set search_path = public
 as $poda$
   delete from public.respaldos r
    where r.local_id = p_local
+     -- 1) Las últimas 50, pase lo que pase. Cubren los últimos minutos.
      and r.id not in (
            select id from public.respaldos
             where local_id = p_local
             order by creado desc
             limit 50
          )
+     -- 2) Una por hora de los últimos 3 días. Es el escalón que faltaba: sin
+     --    él, en pleno servicio las 50 copias son diez minutos y lo anterior
+     --    salta directo a medio día atrás. Pasó el 7/9/2026: la copia buena
+     --    era de dos horas antes y los pedidos del medio no estaban en
+     --    ninguna parte.
+     and r.id not in (
+           select distinct on (floor(extract(epoch from creado) / 3600)) id
+             from public.respaldos
+            where local_id = p_local
+              and creado > now() - interval '3 days'
+            order by floor(extract(epoch from creado) / 3600),
+                     jsonb_array_length(coalesce(datos->'pedidos',   '[]'::jsonb)) +
+                     jsonb_array_length(coalesce(datos->'productos', '[]'::jsonb)) +
+                     jsonb_array_length(coalesce(datos->'mesas',     '[]'::jsonb)) desc,
+                     creado desc
+         )
+     -- 3) Una cada 12 horas del último mes. Para volver a anteayer.
      and r.id not in (
            select distinct on (floor(extract(epoch from creado) / 43200)) id
              from public.respaldos
@@ -225,10 +243,11 @@ begin
   --   copia era de las 21:20: dos horas sin red.
   --
   -- Hacen falta las dos cosas, y no se estorban:
-  --   corto plazo → las últimas 50 copias, pase lo que pase. Para deshacer
-  --                 un accidente de hace un rato.
-  --   largo plazo → una por cada franja de 12 horas, durante 30 días. Para
-  --                 volver a como estaba anteayer.
+  --   minutos → las últimas 50 copias, pase lo que pase. Para deshacer
+  --             un accidente de hace un rato.
+  --   horas   → una por hora de los últimos 3 días.
+--   días    → una cada 12 horas del último mes. Para
+  --             volver a como estaba anteayer.
   -- De cada franja se conserva la copia con MÁS registros, no la más nueva:
   -- si en esa franja pasó un borrado, lo que hay que guardar es la de antes.
   insert into public.respaldos (local_id, datos) values (p_local, p_datos);
