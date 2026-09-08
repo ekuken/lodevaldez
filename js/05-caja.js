@@ -497,8 +497,17 @@ function reabrirTurno(id){
    justo donde va el precio. El ticket ocupa el 100% de la página que
    informa el driver, y lo único que se ajusta por papel es el tamaño de
    letra y cuánto del renglón se le reserva al precio. */
+/* El lugar del precio se mide en importes, no a ojo: tiene que entrar un
+   importe de 8 cifras, que es el techo con el que puede salir el TOTAL de un
+   cierre de caja. Con el "34%" que tenía el de 80 no entraban ni 7: medido,
+   "$ 1.234.567" necesita 103 px y la columna le daba 94, así que se salía del
+   renglón. Justo el papel más ancho era el que menos lugar le daba al precio.
+   Al 42% entran las 8 cifras en los dos papeles.
+   Cuesta dos caracteres del nombre del producto en el de 80 mm (de 19 a 17).
+   Los nombres largos ya se parten solos en dos renglones; el importe no se
+   puede partir: o entra o se sale del papel. */
 const TK_PAPEL = {
-  80: { margen: 4, fuente: 15, precio: '34%' },
+  80: { margen: 4, fuente: 15, precio: '42%' },
   58: { margen: 4, fuente: 10, precio: '42%' }
 };
 function anchoTicket(){

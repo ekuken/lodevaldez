@@ -354,7 +354,7 @@ tbody tr:hover{background:var(--panel-2)}
 #tk{display:none}
 /* El ancho del papel cambia según la impresora de cada café: los valores
    reales los pone tkAplicarAncho() al imprimir (ver 05-caja.js). */
-:root{--tk-fuente:15px;--tk-precio:34%}
+:root{--tk-fuente:15px;--tk-precio:42%}
 @media print{
   body>.app,body>.ovl,body>.toast{display:none !important}
   /* Ancho en % y NO en mm: así el ticket ocupa el papel que el driver de la
