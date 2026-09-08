@@ -168,8 +168,15 @@ function borrarTodo(){
        esta marca el candado de la nube lo frena, igual que frena cualquier
        otro borrado masivo (ver nubeJuntarConLaNube). */
     if (typeof NUBE !== 'undefined') NUBE.borradoAdrede = true;
+    /* Y se deja dicho en los datos mismos, que es lo que viaja a las otras
+       computadoras: sin esto, la de al lado ve desaparecer todo, lo toma por
+       accidente y lo devuelve (ver nubeBorradosAdrede). El contador se lleva
+       del estado viejo, que en la línea siguiente se pierde. */
+    const marcaBorrado = (typeof nubeBorradosAdrede === 'function' ? nubeBorradosAdrede(S) : 0) + 1;
     localStorage.removeItem(KEY());
-    S = structuredClone(DEFAULT_STATE); seed(); save();
+    S = structuredClone(DEFAULT_STATE); seed();
+    S.config.borradosAdrede = marcaBorrado;
+    save();
     closeModal(); go('mesas'); toast('Datos borrados — sistema reiniciado');
   }, 'Sí, borrar todo');
 }
@@ -237,6 +244,11 @@ function sacarDuplicados(){
       if (USUARIO && !S.usuarios.some(u => u.id === USUARIO.id))
         USUARIO = S.usuarios.find(u => u.nombre === USUARIO.nombre) ||
                   S.usuarios.find(u => u.rol === 'admin' && u.activo) || USUARIO;
+      /* Sacar repetidos es un borrado en montón pedido por una persona: hay
+         que avisárselo a las otras computadoras o lo devuelven, tomándolo por
+         accidente (ver nubeBorradosAdrede). */
+      if (typeof nubeBorradosAdrede === 'function')
+        S.config.borradosAdrede = nubeBorradosAdrede(S) + 1;
       save(); closeModal(); refresh();
       toast('Se sacaron ' + n + ' registro(s) repetidos');
     }, 'Sí, sacar los repetidos');

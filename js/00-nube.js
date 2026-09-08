@@ -253,7 +253,17 @@ function nubeElegir(b, m, s, cuenta){
   const fs = s === undefined ? null : nubeFirma(s);
   if (fm === null && fs === null) return undefined;
   /* Está de un solo lado: o lo agregó ese lado, o el otro lo borró */
-  if (fs === null) return (fb !== null && fb === fm) ? undefined : m;
+  if (fs === null){
+    if (fb === null || fb !== fm) return m;   /* se agregó o se cambió acá: es nuestro */
+    /* Está igual que en la referencia y la nube ya no lo tiene. La lectura
+       natural es "la otra computadora lo borró"… pero es la MISMA lectura
+       que hace una restauración: una copia vieja tampoco lo tiene, y no
+       porque alguien lo haya borrado sino porque todavía no existía. Se
+       cuentan aparte para que quien llama decida con el total a la vista
+       (ver nubeJuntarConLaNube). */
+    cuenta.borrados++;
+    return cuenta.sinBorrar ? m : undefined;
+  }
   if (fm === null) return (fb !== null && fb === fs) ? undefined : s;
   if (fm === fs) return m;                    /* iguales, no hay nada que decidir */
   if (fb !== null && fb === fm) return s;     /* acá no se tocó: el cambio es de la otra */
@@ -292,6 +302,19 @@ function nubeCombinarObjeto(base, mio, suyo, cuenta, saltear){
 }
 
 function nubeProximoNum(c){ return c && typeof c.nextNum === 'number' ? c.nextNum : 1; }
+
+/* ---------- Borrados que SÍ son a propósito ----------
+   El sistema no manda "borré el pedido 318", manda el café entero: la otra
+   computadora ve una ausencia y tiene que adivinar si fue alguien borrando o
+   un accidente. Adivinar es justo lo que salió mal el 7/9/2026, así que el
+   que borra a propósito lo deja dicho: un contador que sube de a uno cada
+   vez que se usa "Borrar todo" o "Sacar los repetidos". Si lo que llega de
+   la nube tiene el contador más alto que la referencia, esas bajas son
+   pedidas por una persona y se aplican sin discutir. */
+function nubeBorradosAdrede(e){
+  const n = e && e.config && e.config.borradosAdrede;
+  return typeof n === 'number' ? n : 0;
+}
 
 /* ---------- Catálogos: lo que HAY en el café ----------
    Las listas se dividen en dos clases y no se combinan igual:
@@ -382,6 +405,56 @@ function nubeCuantos(e){
   return NUBE_LISTAS.reduce((a, k) => a + (Array.isArray(e[k]) ? e[k].length : 0), 0);
 }
 
+/* Hasta acá se cree que fue alguien borrando a mano: anular un pedido, sacar
+   un producto que ya no va. Pasado ese número no es una persona trabajando,
+   es un accidente (ver nubeJuntarConLaNube). */
+const NUBE_BORRADOS_DE_A_UNO = 3;
+
+/* ---------- ¿La nube volvió atrás en el tiempo? ----------
+   Una restauración es la única forma de que la nube pase a tener algo MÁS
+   VIEJO de lo que ya nos había dado. Se nota comparando la fecha de guardado
+   de lo que llega contra la de la referencia: hacia adelante siempre crece.
+   Si retrocede, lo que falta no lo borró nadie —la copia vieja todavía no lo
+   tenía— y hacerle caso a esa ausencia borra trabajo bueno.
+   El reloj de cada computadora puede estar corrido, así que esto puede dar
+   una falsa alarma. No importa: equivocarse acá significa NO borrar, que es
+   el lado seguro del error. */
+function nubeVolvioAtras(remoto, base){
+  const fr = remoto && remoto.guardado, fb = base && base.guardado;
+  if (!fr || !fb) return false;
+  return String(fr) < String(fb);
+}
+
+/* ---------- La copia de antes de sincronizar ----------
+   El 7/9/2026 esta computadora tenía dos horas de pedidos que la nube no
+   tenía; al sincronizarse con una copia restaurada los perdió, y no había
+   de dónde volver. Ahora, cada vez que una sincronización saca registros de
+   acá, primero se guarda cómo estaba todo. Vive en esta computadora, es una
+   sola —la última— y se recupera con nubeVolverAtras() desde la consola. */
+function nubeCopiaKey(){ return 'cafe_antes_v1_' + LOCAL; }
+function nubeGuardarCopiaLocal(motivo){
+  try{
+    localStorage.setItem(nubeCopiaKey(), JSON.stringify({
+      cuando: new Date().toISOString(), motivo: motivo, datos: S
+    }));
+  }catch(e){ console.warn('[nube] no se pudo guardar la copia de antes:', e); }
+}
+function nubeVolverAtras(){
+  let c = null;
+  try{ c = JSON.parse(localStorage.getItem(nubeCopiaKey()) || 'null'); }catch(e){}
+  if (!c || !c.datos){ console.log('[nube] no hay copia guardada en esta computadora.'); return false; }
+  console.log('[nube] volviendo a como estaba el ' + c.cuando + ' (' +
+              nubeCuantos(c.datos) + ' registros). Motivo de la copia: ' + c.motivo);
+  S = c.datos;
+  try{ localStorage.setItem(KEY(), JSON.stringify(S)); }catch(e){}
+  /* Se olvida la referencia: con la copia puesta, lo que la nube tenga hay
+     que volver a mirarlo de cero en vez de restarle lo que ya no vale. */
+  nubeBaseEscribir({});
+  if (typeof refresh === 'function'){ try{ refresh(); }catch(e){} }
+  nubeGuardar(300);
+  return true;
+}
+
 /* Frena TODO el guardado a la nube y avisa. Se usa cuando lo que estaba por
    pasar era una pérdida de datos: es preferible quedarse sin sincronizar —los
    datos siguen enteros en cada computadora— que sincronizar un borrado.
@@ -398,8 +471,8 @@ function nubeTrabar(motivo){
   if (el) el.title = 'Guardado frenado: ' + motivo;
 }
 
-function nubeCombinar(base, mio, suyo){
-  const cuenta = { choques: 0 };
+function nubeCombinar(base, mio, suyo, sinBorrar){
+  const cuenta = { choques: 0, borrados: 0, sinBorrar: !!sinBorrar };
   base = base || {}; mio = mio || {}; suyo = suyo || {};
   const out = nubeCombinarObjeto(base, mio, suyo, cuenta, NUBE_APARTE);
   NUBE_LISTAS.forEach(k => { out[k] = nubeCombinarLista(base[k], mio[k], suyo[k], cuenta); });
@@ -408,6 +481,9 @@ function nubeCombinar(base, mio, suyo){
      para no repetir. Aun así, dos pedidos abiertos en el mismo instante
      pueden salir con el mismo número. */
   out.config.nextNum = Math.max(nubeProximoNum(mio.config), nubeProximoNum(suyo.config));
+  /* El contador de borrados a propósito tampoco se combina: se toma el más
+     alto, así el aviso no se pierde por el camino. */
+  out.config.borradosAdrede = Math.max(nubeBorradosAdrede(mio), nubeBorradosAdrede(suyo));
   out.salon = nubeCombinarObjeto(base.salon, mio.salon, suyo.salon, cuenta, ['elementos']);
   out.salon.elementos = nubeCombinarLista((base.salon || {}).elementos,
                                           (mio.salon  || {}).elementos,
@@ -420,7 +496,8 @@ function nubeCombinar(base, mio, suyo){
   /* Sin referencia previa, combinar por id deja los dos juegos de mesas y
      productos que cada computadora había armado por su cuenta. */
   const repetidos = nubeLimpiarCatalogos(out);
-  return { estado: out, choques: cuenta.choques, repetidos: repetidos };
+  return { estado: out, choques: cuenta.choques, repetidos: repetidos,
+           borrados: cuenta.borrados };
 }
 
 /* Repinta la pantalla, salvo que el usuario esté en el medio de algo:
@@ -462,9 +539,40 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
     console.warn('[nube] esta computadora abrió sin datos y la nube tiene ' + enLaNube +
                  ' registros: se toma lo de la nube sin combinar, para no borrarlos.');
 
-  const res = arrancoEnBlanco
-    ? { estado: JSON.parse(JSON.stringify(remoto)), choques: 0, repetidos: 0 }
+  let res = arrancoEnBlanco
+    ? { estado: JSON.parse(JSON.stringify(remoto)), choques: 0, repetidos: 0, borrados: 0 }
     : nubeCombinar(base, S, remoto);
+
+  /* ---------- Restaurar no es borrar ----------
+     El otro agujero del 7/9/2026, y el más traicionero: se abre justo cuando
+     se está recuperando de un problema. Esta computadora tenía 318 pedidos y
+     su referencia decía que la nube tenía esos mismos 318. Al restaurar la
+     copia de 309, los nueve que faltaban entraron por el camino de "la otra
+     computadora los borró" y se borraron acá también. El candado no los
+     atajó: nueve de seiscientos registros ni se acercan a la mitad.
+
+     Se toman por buenos los borrados de a uno —alguien anula un pedido, saca
+     un producto— pero no una desaparición en montón, ni ninguna si la nube
+     volvió atrás en el tiempo. En esos casos se rehace la combinación sin
+     aceptar bajas: lo nuestro se conserva y se vuelve a subir. Si de verdad
+     alguien había borrado algo, vuelve a aparecer y se borra de nuevo; el
+     error cuesta un minuto, y al revés cuesta el día de trabajo. */
+  const restaura = nubeVolvioAtras(remoto, base);
+  const loPidieron = nubeBorradosAdrede(remoto) > nubeBorradosAdrede(base);
+  let copiaHecha = false;
+  if (!arrancoEnBlanco && !loPidieron && res.borrados > 0 &&
+      (restaura || res.borrados > NUBE_BORRADOS_DE_A_UNO)){
+    const motivo = restaura
+      ? 'la nube volvió a una copia anterior (' + remoto.guardado + ')'
+      : 'desaparecieron ' + res.borrados + ' registros de golpe';
+    console.warn('[nube] ' + motivo + ': se conservan los ' + res.borrados +
+                 ' registros de esta computadora en vez de borrarlos.');
+    nubeGuardarCopiaLocal(motivo);
+    copiaHecha = true;
+    res = nubeCombinar(base, S, remoto, true);
+    if (typeof toast === 'function' && typeof USUARIO !== 'undefined' && USUARIO)
+      toast('⚠ Se recuperaron ' + res.borrados + ' registro(s) que la nube no tenía');
+  }
 
   /* ---------- El candado ----------
      Red de seguridad para cualquier otro camino que termine borrando de
@@ -479,6 +587,12 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
                ' que hay en la nube');
     return;
   }
+
+  /* Un choque también es una pérdida, más chica: lo que se editó acá quedó
+     pisado por la versión de la otra computadora. Va a la misma copia, salvo
+     que ya se haya guardado una por algo más grave. */
+  if (res.choques && !copiaHecha)
+    nubeGuardarCopiaLocal(res.choques + ' cambio(s) pisados por la otra computadora');
 
   nubeBaseEscribir(remoto);                 /* esto es lo que la nube tiene ahora */
   const cambio = nubeFirma(res.estado) !== nubeFirma(S);
@@ -627,6 +741,11 @@ async function nubeSubirAhora(){
       NUBE.version = r.version;
       NUBE.fallos = 0;
       NUBE.choques = 0;
+      /* El permiso para vaciar el café dura un solo guardado: es el que sube
+         el borrado pedido desde Ajustes. Sin esto la marca quedaba prendida
+         hasta cerrar la pestaña, y el candado —lo único que ataja un borrado
+         masivo— pasaba el resto del día apagado en esa computadora. */
+      NUBE.borradoAdrede = false;
       nubeBaseEscribir(enviado);              /* ahora la nube tiene esto */
       nubeEstado('sincronizado');
     }

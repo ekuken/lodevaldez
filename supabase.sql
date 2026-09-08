@@ -246,7 +246,7 @@ begin
   --   minutos → las últimas 50 copias, pase lo que pase. Para deshacer
   --             un accidente de hace un rato.
   --   horas   → una por hora de los últimos 3 días.
---   días    → una cada 12 horas del último mes. Para
+  --   días    → una cada 12 horas del último mes. Para
   --             volver a como estaba anteayer.
   -- De cada franja se conserva la copia con MÁS registros, no la más nueva:
   -- si en esa franja pasó un borrado, lo que hay que guardar es la de antes.
