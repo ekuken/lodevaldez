@@ -318,20 +318,17 @@ function nubeElegir(b, m, s, cuenta, juntar){
     return cuenta.sinBorrar ? m : undefined;
   }
   if (fm === null) return (fb !== null && fb === fs) ? undefined : s;
-  if (fm === fs){
-    /* Quedaron iguales de los dos lados. Si además están como en la
-       referencia, no los tocó nadie y no hay nada que decidir.
-       Pero si los dos cambiaron y llegaron al mismo resultado, sí pasó algo:
-       en una mesa con un café, que las dos computadoras muestren dos cafés
-       quiere decir que CADA UNA agregó uno, y son tres. Devolver "dos"
-       porque coinciden es cobrar de menos. */
-    if (fb === null || fb === fm) return m;
-    if (juntar){
-      const r = juntar(b, m, s, cuenta);
-      if (r !== undefined) return r;
-    }
-    return m;
-  }
+  /* Quedaron iguales de los dos lados: se deja así, aunque los dos hayan
+     cambiado respecto de la referencia.
+     Se puede pensar que ahí hay que sumar —en una mesa con un café, que las
+     dos computadoras muestren dos podría ser que cada una agregó uno, y
+     serían tres— pero es indistinguible de algo mucho más común: la subida
+     llegó a la nube y lo que se perdió fue la respuesta. Ahí el reintento
+     encuentra base=2, lo mío=3 y la nube=3, y sumar daría 4 unidades que
+     nadie pidió. Esa segunda situación se volvió frecuente desde que la
+     subida corta a los 30 segundos, así que ante la duda no se suma:
+     cobrar de menos una vez es un problema; cobrar de más, otro peor. */
+  if (fm === fs) return m;
   if (fb !== null && fb === fm) return s;     /* acá no se tocó: el cambio es de la otra */
   if (fb !== null && fb === fs) return m;     /* la otra no lo tocó: el cambio es nuestro */
   /* Las dos lo editaron. Si es algo que se puede juntar en vez de elegir
