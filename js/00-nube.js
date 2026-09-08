@@ -167,7 +167,9 @@ async function nubeSalir(){
 async function nubeMisLocales(){
   if (!nubeIniciar()) return [];
   try{
-    const { data, error } = await NUBE.cli.from('miembros').select('local_id');
+    /* Con límite, como el resto: sin él, un wifi flojo deja la pantalla de
+       ingreso esperando para siempre en vez de avisar que no hay conexión. */
+    const { data, error } = await nubeConLimite(NUBE.cli.from('miembros').select('local_id'));
     if (error){ nubeFallo('leyendo "miembros"', error); return []; }
     if (!data || !data.length){
       console.warn('[nube] la cuenta no figura en la tabla "miembros": no va a poder ' +
@@ -717,9 +719,21 @@ async function nubeSubirAhora(){
   try{ enviado = JSON.parse(JSON.stringify(S)); }
   catch(e){ NUBE.guardando = false; nubeFallo('preparando los datos', e); return; }
   try{
-    const { data, error } = await NUBE.cli.rpc('guardar_local', {
+    /* ---------- Con límite de tiempo, como todas las demás ----------
+       Esta era la única llamada a la nube sin corte, y es la que más tarda
+       porque manda el café entero. Con el wifi del local flojo la petición
+       se queda colgada sin resolverse nunca, y "guardando" no se apaga más.
+       A partir de ahí esa computadora se congela: no vuelve a subir nada
+       —nubeSubirAhora arranca con "if (NUBE.guardando) return"— y tampoco
+       mira lo que hacen las otras, porque nubeMirarNovedades corta por lo
+       mismo. La pantalla se queda vieja y la única salida es F5. Pasó en el
+       café el 7 y el 8/9/2026.
+       Si la subida llegó igual y lo que se perdió fue la respuesta, el
+       reintento manda la versión anterior, la base contesta "hay conflicto"
+       y se combina: el camino de siempre, sin pisar nada. */
+    const { data, error } = await nubeConLimite(NUBE.cli.rpc('guardar_local', {
       p_local: LOCAL, p_datos: enviado, p_version: NUBE.version
-    });
+    }), 30000);
     const r = Array.isArray(data) ? data[0] : data;
     if (error){
       nubeFallo('guardando el café "' + LOCAL + '"', error);
