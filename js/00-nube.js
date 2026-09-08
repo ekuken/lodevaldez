@@ -267,6 +267,11 @@ function nubeIndice(lista){
 function nubeJuntarPedido(b, m, s, cuenta){
   if (!m || !s || m.estado !== 'abierto' || s.estado !== 'abierto') return undefined;
   if (!Array.isArray(m.items) || !Array.isArray(s.items)) return undefined;
+  /* Sin referencia no hay resta que hacer, y sumar los dos lados sin ella
+     duplica todo lo que ya estaba en los dos: dos cafés que en realidad son
+     el mismo pasan a ser cuatro. Sin saber de dónde se partió, mejor la
+     regla de siempre. */
+  if (!b || !Array.isArray(b.items)) return undefined;
 
   const cant = lista => {
     const o = {};
@@ -317,7 +322,20 @@ function nubeElegir(b, m, s, cuenta, juntar){
     cuenta.borrados++;
     return cuenta.sinBorrar ? m : undefined;
   }
-  if (fm === null) return (fb !== null && fb === fs) ? undefined : s;
+  if (fm === null){
+    if (fb === null || fb !== fs) return s;   /* la nube lo agregó o lo cambió */
+    /* El espejo del caso de arriba, y el más peligroso de los dos porque el
+       borrado se PROPAGA: está en la referencia, la nube lo sigue teniendo
+       igual, y acá no está. La lectura natural es "lo borró el usuario"…
+       pero es la misma que si esta computadora perdió registros —el
+       navegador se limpió a medias, un respaldo incompleto, una combinación
+       anterior que salió mal—. Ahí no borró nadie: falta.
+       Que la computadora abra del todo vacía ya está cubierto aparte; esto
+       cubre el caso feo, el de perder una parte, que no lo activa y que el
+       candado tampoco atrapa si no llega a la mitad. */
+    cuenta.borradosSuyos++;
+    return cuenta.sinBorrar ? s : undefined;
+  }
   /* Quedaron iguales de los dos lados: se deja así, aunque los dos hayan
      cambiado respecto de la referencia.
      Se puede pensar que ahí hay que sumar —en una mesa con un café, que las
@@ -542,7 +560,7 @@ function nubeTrabar(motivo){
 }
 
 function nubeCombinar(base, mio, suyo, sinBorrar){
-  const cuenta = { choques: 0, borrados: 0, sinBorrar: !!sinBorrar };
+  const cuenta = { choques: 0, borrados: 0, borradosSuyos: 0, sinBorrar: !!sinBorrar };
   base = base || {}; mio = mio || {}; suyo = suyo || {};
   const out = nubeCombinarObjeto(base, mio, suyo, cuenta, NUBE_APARTE);
   /* Los pedidos son la única lista que sabe juntarse en vez de elegir un
@@ -582,7 +600,7 @@ function nubeCombinar(base, mio, suyo, sinBorrar){
      Además, los duplicados venían de una computadora que arrancaba vacía y
      sumaba su café de ejemplo al de verdad, y eso ya no puede pasar. */
   return { estado: out, choques: cuenta.choques, repetidos: 0,
-           borrados: cuenta.borrados };
+           borrados: cuenta.borrados, borradosSuyos: cuenta.borradosSuyos };
 }
 
 /* Repinta la pantalla, salvo que el usuario esté en el medio de algo:
@@ -625,7 +643,7 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
                  ' registros: se toma lo de la nube sin combinar, para no borrarlos.');
 
   let res = arrancoEnBlanco
-    ? { estado: JSON.parse(JSON.stringify(remoto)), choques: 0, repetidos: 0, borrados: 0 }
+    ? { estado: JSON.parse(JSON.stringify(remoto)), choques: 0, repetidos: 0, borrados: 0, borradosSuyos: 0 }
     : nubeCombinar(base, S, remoto);
 
   /* ---------- Restaurar no es borrar ----------
@@ -644,19 +662,27 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
      error cuesta un minuto, y al revés cuesta el día de trabajo. */
   const restaura = nubeVolvioAtras(remoto, base);
   const loPidieron = nubeBorradosAdrede(remoto) > nubeBorradosAdrede(base);
+  /* Las bajas se cuentan en las dos direcciones y se deciden juntas: las que
+     faltan en la nube y tenemos acá, y las que faltan acá y la nube sigue
+     teniendo. Las segundas son peores, porque al subir se propagan. */
+  const bajas = res.borrados + res.borradosSuyos;
   let copiaHecha = false;
-  if (!arrancoEnBlanco && !loPidieron && res.borrados > 0 &&
-      (restaura || res.borrados > NUBE_BORRADOS_DE_A_UNO)){
+  if (!arrancoEnBlanco && !loPidieron && bajas > 0 &&
+      (restaura || bajas > NUBE_BORRADOS_DE_A_UNO)){
     const motivo = restaura
       ? 'la nube volvió a una copia anterior (' + remoto.guardado + ')'
-      : 'desaparecieron ' + res.borrados + ' registros de golpe';
-    console.warn('[nube] ' + motivo + ': se conservan los ' + res.borrados +
-                 ' registros de esta computadora en vez de borrarlos.');
+      : 'desaparecieron ' + bajas + ' registros de golpe' +
+        (res.borrados && res.borradosSuyos
+          ? ' (' + res.borrados + ' de la nube y ' + res.borradosSuyos + ' de acá)'
+          : res.borradosSuyos ? ' de esta computadora' : ' de la nube');
+    console.warn('[nube] ' + motivo + ': se conservan los ' + bajas +
+                 ' registros en vez de borrarlos.');
     nubeGuardarCopiaLocal(motivo);
     copiaHecha = true;
     res = nubeCombinar(base, S, remoto, true);
     if (typeof toast === 'function' && typeof USUARIO !== 'undefined' && USUARIO)
-      toast('⚠ Se recuperaron ' + res.borrados + ' registro(s) que la nube no tenía');
+      toast('⚠ Se conservaron ' + (res.borrados + res.borradosSuyos) +
+            ' registro(s) que estaban por borrarse');
   }
 
   /* ---------- El candado ----------
