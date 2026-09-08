@@ -145,7 +145,13 @@ function migrar(){
     if (p.personas === undefined) p.personas = null;
     if (p.mozoNombre === undefined){ p.mozoId = null; p.mozoNombre = ''; }
     if (p.comanda === undefined) p.comanda = p.estado === 'abierto' ? null : p.abierto;
-    p.items.forEach(i => { if (i.enviado === undefined) i.enviado = p.estado !== 'abierto' || !!p.comanda; });
+    /* Cada ítem lleva su propio id: los botones del carrito lo usan para no
+       depender de la posición en la lista, y la nube lo usa para juntar los
+       ítems que dos computadoras cargaron en la misma mesa. */
+    p.items.forEach(i => {
+      if (!i.iid) i.iid = uid();
+      if (i.enviado === undefined) i.enviado = p.estado !== 'abierto' || !!p.comanda;
+    });
     if (p.cuentaId === undefined) p.cuentaId = null;
     if (p.descTipo === undefined){ p.descTipo = 'pct'; p.descVal = 0; }
     if (p.descuento && !p.descVal){ p.descTipo = 'monto'; p.descVal = p.descuento; }

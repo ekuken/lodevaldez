@@ -249,7 +249,58 @@ function nubeIndice(lista){
    m = como está en esta computadora
    s = como está ahora en la nube (lo que hizo la otra)
    Devuelve undefined si el registro tiene que desaparecer. */
-function nubeElegir(b, m, s, cuenta){
+/* ---------- Dos mozos cargando en la misma mesa ----------
+   El caso que se perdía: uno agrega un café desde el celular y otro una
+   medialuna desde el mostrador, en la misma cuenta. Los dos cambiaron el
+   mismo pedido respecto de la referencia, así que era un choque, y en un
+   choque ganaba la nube: uno de los dos productos desaparecía y la mesa se
+   cobraba de menos.
+
+   Pero un pedido abierto no es un dato que se pisa, es una suma. Cada ítem
+   tiene su id (ver migrar), así que se puede resolver por cantidad: lo que
+   queda es lo que tenía cada uno menos lo que había antes. Si uno sumó una
+   unidad y el otro sumó otra, quedan las dos; si uno lo sacó, se va.
+
+   Solo para pedidos ABIERTOS. Uno ya cobrado no se toca: ahí la cuenta está
+   cerrada y cambiarla sería mover plata. Devolver undefined es decir "no sé
+   juntarlo", y vuelve a la regla de siempre. */
+function nubeJuntarPedido(b, m, s, cuenta){
+  if (!m || !s || m.estado !== 'abierto' || s.estado !== 'abierto') return undefined;
+  if (!Array.isArray(m.items) || !Array.isArray(s.items)) return undefined;
+
+  const cant = lista => {
+    const o = {};
+    (Array.isArray(lista) ? lista : []).forEach(i => {
+      if (i && i.iid) o[i.iid] = (o[i.iid] || 0) + (Number(i.cant) || 0);
+    });
+    return o;
+  };
+  const cb = cant(b && b.items), cm = cant(m.items), cs = cant(s.items);
+  /* Los ítems viejos sin iid no se pueden seguir de un lado al otro */
+  if (m.items.some(i => !i.iid) || s.items.some(i => !i.iid)) return undefined;
+
+  const porId = {};
+  s.items.concat(m.items).forEach(i => { if (!porId[i.iid]) porId[i.iid] = i; });
+
+  const items = [];
+  Object.keys(porId).forEach(k => {
+    const q = (cm[k] || 0) + (cs[k] || 0) - (cb[k] || 0);
+    if (q <= 0) return;                       /* alguno lo sacó */
+    const mio = m.items.find(i => i.iid === k), suyo = s.items.find(i => i.iid === k);
+    const base = suyo || mio;
+    items.push(Object.assign({}, base, {
+      cant: q,
+      /* Enviado a cocina de un lado ya está enviado */
+      enviado: !!((mio && mio.enviado) || (suyo && suyo.enviado))
+    }));
+  });
+
+  const out = nubeCombinarObjeto(b, m, s, cuenta, ['items']);
+  out.items = items;
+  return out;
+}
+
+function nubeElegir(b, m, s, cuenta, juntar){
   const fb = b === undefined ? null : nubeFirma(b);
   const fm = m === undefined ? null : nubeFirma(m);
   const fs = s === undefined ? null : nubeFirma(s);
@@ -267,14 +318,34 @@ function nubeElegir(b, m, s, cuenta){
     return cuenta.sinBorrar ? m : undefined;
   }
   if (fm === null) return (fb !== null && fb === fs) ? undefined : s;
-  if (fm === fs) return m;                    /* iguales, no hay nada que decidir */
+  if (fm === fs){
+    /* Quedaron iguales de los dos lados. Si además están como en la
+       referencia, no los tocó nadie y no hay nada que decidir.
+       Pero si los dos cambiaron y llegaron al mismo resultado, sí pasó algo:
+       en una mesa con un café, que las dos computadoras muestren dos cafés
+       quiere decir que CADA UNA agregó uno, y son tres. Devolver "dos"
+       porque coinciden es cobrar de menos. */
+    if (fb === null || fb === fm) return m;
+    if (juntar){
+      const r = juntar(b, m, s, cuenta);
+      if (r !== undefined) return r;
+    }
+    return m;
+  }
   if (fb !== null && fb === fm) return s;     /* acá no se tocó: el cambio es de la otra */
   if (fb !== null && fb === fs) return m;     /* la otra no lo tocó: el cambio es nuestro */
-  cuenta.choques++;                           /* las dos lo editaron: no hay forma de adivinar */
+  /* Las dos lo editaron. Si es algo que se puede juntar en vez de elegir
+     —una cuenta abierta con ítems cargados de los dos lados— se junta y no
+     hay nada que perder. */
+  if (juntar){
+    const r = juntar(b, m, s, cuenta);
+    if (r !== undefined) return r;
+  }
+  cuenta.choques++;                           /* no hay forma de adivinar */
   return s;                                   /* queda el que ya está guardado en la nube */
 }
 
-function nubeCombinarLista(base, mio, suyo, cuenta){
+function nubeCombinarLista(base, mio, suyo, cuenta, juntar){
   const ib = nubeIndice(base), im = nubeIndice(mio), is = nubeIndice(suyo);
   const salida = [], puestas = {};
   /* Primero en el orden que tiene la nube, después lo que solo está acá */
@@ -283,7 +354,7 @@ function nubeCombinarLista(base, mio, suyo, cuenta){
   orden.forEach(k => {
     if (puestas[k]) return;
     puestas[k] = 1;
-    const r = nubeElegir(ib[k], im[k], is[k], cuenta);
+    const r = nubeElegir(ib[k], im[k], is[k], cuenta, juntar);
     if (r !== undefined) salida.push(r);
   });
   return salida;
@@ -477,7 +548,12 @@ function nubeCombinar(base, mio, suyo, sinBorrar){
   const cuenta = { choques: 0, borrados: 0, sinBorrar: !!sinBorrar };
   base = base || {}; mio = mio || {}; suyo = suyo || {};
   const out = nubeCombinarObjeto(base, mio, suyo, cuenta, NUBE_APARTE);
-  NUBE_LISTAS.forEach(k => { out[k] = nubeCombinarLista(base[k], mio[k], suyo[k], cuenta); });
+  /* Los pedidos son la única lista que sabe juntarse en vez de elegir un
+     lado (ver nubeJuntarPedido); el resto sigue la regla común. */
+  NUBE_LISTAS.forEach(k => {
+    out[k] = nubeCombinarLista(base[k], mio[k], suyo[k], cuenta,
+                               k === 'pedidos' ? nubeJuntarPedido : null);
+  });
   out.config = nubeCombinarObjeto(base.config, mio.config, suyo.config, cuenta);
   /* El número de pedido es un contador compartido: se toma el más alto
      para no repetir. Aun así, dos pedidos abiertos en el mismo instante
@@ -497,8 +573,18 @@ function nubeCombinar(base, mio, suyo, sinBorrar){
   if (g !== undefined) out.guardado = g;
   /* Sin referencia previa, combinar por id deja los dos juegos de mesas y
      productos que cada computadora había armado por su cuenta. */
-  const repetidos = nubeLimpiarCatalogos(out);
-  return { estado: out, choques: cuenta.choques, repetidos: repetidos,
+  /* Acá se sacaban los repetidos en cada sincronización, sin preguntar. Iban
+     por nombre —dos productos que se llamen igual son el mismo, dos usuarios
+     también— y eso convierte una coincidencia legítima en un borrado: si en
+     el café trabajan dos Martín, uno se quedaba sin poder entrar, y nadie se
+     enteraba de por qué.
+     El propio sistema ya decía cuál era la forma correcta: migrar() aclara
+     que lo repetido NO se saca solo al abrir, porque borrar registros sin
+     que nadie lo pida es peligroso, y para eso está el botón "Sacar los
+     repetidos" de Ajustes, que muestra qué se va a sacar y pide confirmar.
+     Además, los duplicados venían de una computadora que arrancaba vacía y
+     sumaba su café de ejemplo al de verdad, y eso ya no puede pasar. */
+  return { estado: out, choques: cuenta.choques, repetidos: 0,
            borrados: cuenta.borrados };
 }
 

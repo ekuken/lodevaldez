@@ -474,12 +474,12 @@ function nuevoMostrador(){ abrirPedido(nuevoPedido('mostrador', null).id); }
 /* ------------------------------------------------------------
    Punto de venta
    ------------------------------------------------------------ */
-let POS = { id: null, cat: 'Todas', q: '', nota: -1, split: false, lineas: [], paga: 0,
+let POS = { id: null, cat: 'Todas', q: '', nota: null, split: false, lineas: [], paga: 0,
             cobrando: false, medio: null, cuentaId: null };
 
 function abrirPedido(id){
   const p = S.pedidos.find(x => x.id === id); if (!p) return;
-  POS = { id: id, cat: 'Todas', q: '', nota: -1, split: false, lineas: [], paga: 0,
+  POS = { id: id, cat: 'Todas', q: '', nota: null, split: false, lineas: [], paga: 0,
           cobrando: false, medio: null, cuentaId: null };
   const m = p.mesaId ? mesa(p.mesaId) : null;
   const tit = (p.tipo === 'mesa' ? 'Mesa ' + p.mesaNum + (m && m.zona ? ' · ' + esc(m.zona) : '') : 'Para llevar') +
@@ -532,23 +532,34 @@ function addItem(pid){
   if (p.estado !== 'abierto') return toast('El pedido ya está cerrado');
   const it = p.items.find(i => i.pid === pid && !i.nota && !i.enviado);
   if (it) it.cant++;
-  else p.items.push({ pid: pid, nombre: pr.nombre, precio: pr.precio, cant: 1, nota: '', enviado: false });
+  else p.items.push({ iid: uid(), pid: pid, nombre: pr.nombre, precio: pr.precio, cant: 1, nota: '', enviado: false });
   aplicarDescuento(p); save(); pintarCart(); pintarProds();
 }
-function cambiarCant(idx, d){
+
+/* ---------- Cada ítem se busca por su id, no por su posición ----------
+   Los botones del carrito llevaban el número de fila. Entre que se dibuja la
+   pantalla y que alguien toca un botón puede llegar un cambio de la otra
+   computadora y correr la lista: el "−" terminaba sacándole una unidad al
+   producto de al lado. Con el id no importa cómo quedó ordenada. */
+function itemDe(p, iid){ return p ? p.items.find(i => i.iid === iid) : null; }
+
+function cambiarCant(iid, d){
   const p = pedidoPOS(); if (!p || p.estado !== 'abierto') return;
-  p.items[idx].cant += d;
-  if (p.items[idx].cant <= 0) p.items.splice(idx, 1);
+  const i = itemDe(p, iid); if (!i) return pintarCart();   /* ya no está: se redibuja */
+  i.cant += d;
+  if (i.cant <= 0) p.items = p.items.filter(x => x.iid !== iid);
   aplicarDescuento(p); save(); pintarCart();
 }
-function quitarItem(idx){
+function quitarItem(iid){
   const p = pedidoPOS(); if (!p || p.estado !== 'abierto') return;
-  p.items.splice(idx, 1); aplicarDescuento(p); save(); pintarCart();
+  p.items = p.items.filter(x => x.iid !== iid);
+  aplicarDescuento(p); save(); pintarCart();
 }
-function editarNota(idx){ POS.nota = (POS.nota === idx ? -1 : idx); pintarCart(); }
-function guardarNota(idx, v){
+function editarNota(iid){ POS.nota = (POS.nota === iid ? null : iid); pintarCart(); }
+function guardarNota(iid, v){
   const p = pedidoPOS(); if (!p) return;
-  p.items[idx].nota = v; POS.nota = -1; save(); pintarCart();
+  const i = itemDe(p, iid); if (i) i.nota = v;
+  POS.nota = null; save(); pintarCart();
 }
 
 function pintarCart(){
@@ -557,21 +568,21 @@ function pintarCart(){
   const cerrado = p.estado !== 'abierto';
 
   c.innerHTML = p.items.length
-    ? p.items.map((i, idx) => POS.nota === idx
+    ? p.items.map(i => { const q = "'" + i.iid + "'"; return POS.nota === i.iid
         ? '<div class="ci"><div class="cn"><b>' + esc(i.nombre) + '</b>' +
             '<input type="text" id="notaIn" value="' + esc(i.nota) + '" placeholder="Ej: sin azúcar, para llevar…" style="margin-top:4px" ' +
-            'onkeydown="if(event.key===\'Enter\')guardarNota(' + idx + ',this.value);if(event.key===\'Escape\'){POS.nota=-1;pintarCart()}" ' +
-            'onblur="guardarNota(' + idx + ',this.value)"></div></div>'
+            'onkeydown="if(event.key===\'Enter\')guardarNota(' + q + ',this.value);if(event.key===\'Escape\'){POS.nota=null;pintarCart()}" ' +
+            'onblur="guardarNota(' + q + ',this.value)"></div></div>'
         : '<div class="ci">' +
             '<div class="cn"><b>' + esc(i.nombre) + '</b><span>' + fmt(i.precio) + ' c/u' + (i.nota ? ' · 📝 ' + esc(i.nota) : '') + '</span></div>' +
             (cerrado ? '<span class="mono small">x' + i.cant + '</span>'
-                     : '<div class="qty"><button onclick="cambiarCant(' + idx + ',-1)">−</button><span>' + i.cant + '</span><button onclick="cambiarCant(' + idx + ',1)">＋</button></div>') +
+                     : '<div class="qty"><button onclick="cambiarCant(' + q + ',-1)">−</button><span>' + i.cant + '</span><button onclick="cambiarCant(' + q + ',1)">＋</button></div>') +
             '<div class="cl">' + fmt(i.precio * i.cant) + '</div>' +
-            (cerrado ? '' : '<button class="btn xs" title="Nota" onclick="editarNota(' + idx + ')">✎</button>' +
-                            '<button class="btn xs dan" title="Quitar" onclick="quitarItem(' + idx + ')">×</button>') +
-          '</div>').join('')
+            (cerrado ? '' : '<button class="btn xs" title="Nota" onclick="editarNota(' + q + ')">✎</button>' +
+                            '<button class="btn xs dan" title="Quitar" onclick="quitarItem(' + q + ')">×</button>') +
+          '</div>'; }).join('')
     : '<div class="empty small" style="padding:30px 10px">🧺<br>Carrito vacío<br><span class="small">Tocá un producto para agregarlo</span></div>';
-  if (POS.nota >= 0){ const n = $('#notaIn'); if (n){ n.focus(); n.select(); } }
+  if (POS.nota){ const n = $('#notaIn'); if (n){ n.focus(); n.select(); } }
 
   const st = subtotal(p), tt = total(p);
   f.innerHTML =
