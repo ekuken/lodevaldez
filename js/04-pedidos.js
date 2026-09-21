@@ -17,6 +17,22 @@ function alDiaF(){
 
 function fechaPedido(p){ return dkey(p.cerrado || p.abierto); }
 
+/* Hora de apertura o de cierre, para mostrar.
+   El pedido figura en un solo día —el del cobro, si ya se cobró—, pero la
+   mesa se pudo abrir antes de medianoche. En ese caso la hora sola haría
+   pensar que es del día de la fila, así que se le agrega su fecha.
+   En el listado la fecha va en un renglón aparte: puesta al lado, ensancha
+   la columna de todas las filas por un caso que es raro. */
+function otroDia(p, iso){ return dkey(iso) !== fechaPedido(p); }
+function horaPedido(p, iso){
+  if (!iso) return '—';
+  return hora(iso) + (otroDia(p, iso) ? ' del ' + fechaCorta(iso) : '');
+}
+function celdaHora(p, iso){
+  if (!iso) return '—';
+  return hora(iso) + (otroDia(p, iso) ? '<div class="small">' + fechaCorta(iso) + '</div>' : '');
+}
+
 function pedidosFiltrados(){
   return S.pedidos.filter(p => {
     const f = fechaPedido(p);
@@ -125,7 +141,7 @@ function renderPedidos(){
   } else {
     const vis = list.slice(0, F.limit);
     h += '<div class="tbl-wrap"><table><thead><tr>' +
-      '<th>N°</th><th>Fecha</th><th>Hora</th><th>Origen</th><th>Mozo</th><th>Detalle</th><th>Pago</th><th>Estado</th><th class="num">Total</th><th></th>' +
+      '<th>N°</th><th>Fecha</th><th>Abrió</th><th>Cerró</th><th>Origen</th><th>Mozo</th><th>Detalle</th><th>Pago</th><th>Estado</th><th class="num">Total</th><th></th>' +
       '</tr></thead><tbody>' +
       vis.map(p => {
         const ests = { cerrado: 'ok', abierto: 'warn', anulado: 'bad' };
@@ -134,7 +150,8 @@ function renderPedidos(){
         return '<tr>' +
           '<td><b>#' + p.num + '</b></td>' +
           '<td class="mono">' + fechaCorta(p.cerrado || p.abierto) + '</td>' +
-          '<td class="mono muted">' + hora(p.cerrado || p.abierto) + '</td>' +
+          '<td class="mono muted">' + celdaHora(p, p.abierto) + '</td>' +
+          '<td class="mono muted">' + celdaHora(p, p.cerrado) + '</td>' +
           '<td>' + (p.tipo === 'mesa' ? 'Mesa ' + p.mesaNum : '🥡 Para llevar') + '</td>' +
           '<td class="small">' + esc(p.mozoNombre || '—') + '</td>' +
           '<td class="small muted" style="max-width:240px">' + esc(det || '—') + '</td>' +
@@ -176,7 +193,9 @@ function verPedido(id){
     title: 'Pedido #' + p.num + ' <span class="pill ' + (p.estado === 'cerrado' ? 'ok' : 'bad') + '">' + cap(p.estado) + '</span>',
     body:
       '<div class="row small muted" style="margin-bottom:12px">' +
-        '<span>📅 ' + fechaCorta(p.cerrado || p.abierto) + ' ' + hora(p.cerrado || p.abierto) + '</span>' +
+        '<span>📅 ' + fechaCorta(p.cerrado || p.abierto) + '</span>' +
+        '<span>🕐 Abrió ' + horaPedido(p, p.abierto) +
+          (p.cerrado ? ' · Cerró ' + horaPedido(p, p.cerrado) : '') + '</span>' +
         '<span>' + (p.tipo === 'mesa' ? '🍽 Mesa ' + p.mesaNum : '🥡 Para llevar') + '</span>' +
         '<span>💳 ' + textoPago(p) + (p.cuentaId && cuenta(p.cuentaId) ? ' — ' + esc(cuenta(p.cuentaId).nombre) : '') + '</span>' +
         (p.mozoNombre ? '<span>🧑‍🍳 ' + esc(p.mozoNombre) + '</span>' : '') +
@@ -329,11 +348,12 @@ function anularCobrado(id){
 function exportarCSV(){
   const list = pedidosFiltrados();
   if (!list.length) return toast('No hay pedidos para exportar');
-  const rows = [['Pedido','Fecha','Hora','Origen','Mozo','Estado','Medio de pago','Cuenta','Producto','Cantidad','Precio unitario','Importe','Descuento pedido','Total pedido','Recargo','Total cobrado']];
+  const rows = [['Pedido','Fecha','Abrió','Cerró','Origen','Mozo','Estado','Medio de pago','Cuenta','Producto','Cantidad','Precio unitario','Importe','Descuento pedido','Total pedido','Recargo','Total cobrado']];
   list.forEach(p => {
     const org = p.tipo === 'mesa' ? 'Mesa ' + p.mesaNum : 'Para llevar';
     const cta = p.cuentaId && cuenta(p.cuentaId) ? cuenta(p.cuentaId).nombre : '';
-    const base = [p.num, fechaCorta(p.cerrado || p.abierto), hora(p.cerrado || p.abierto), org, p.mozoNombre || '', p.estado, textoPago(p), cta];
+    const base = [p.num, fechaCorta(p.cerrado || p.abierto), horaPedido(p, p.abierto), horaPedido(p, p.cerrado),
+                  org, p.mozoNombre || '', p.estado, textoPago(p), cta];
     const fin = [p.descuento || 0, total(p), recargoDe(p), totalCobrado(p)];
     if (!p.items.length) rows.push(base.concat(['', '', '', ''], fin));
     p.items.forEach(i => rows.push(base.concat([i.nombre, i.cant, i.precio, i.precio * i.cant], fin)));
