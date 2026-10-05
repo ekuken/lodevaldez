@@ -222,7 +222,7 @@ async function nubeBajar(localId){
 const NUBE_LISTAS = ['mesas', 'productos', 'proveedores', 'pedidos', 'compras',
                      'cierres', 'cuentas', 'pagosCuenta', 'usuarios', 'movimientos'];
 /* Estas se tratan aparte, no como un valor suelto más */
-const NUBE_APARTE = NUBE_LISTAS.concat(['config', 'salon', 'guardado']);
+const NUBE_APARTE = NUBE_LISTAS.concat(['config', 'salon', 'guardado', 'borrados']);
 
 /* Texto único de un valor, con las claves siempre en el mismo orden.
    Hace falta ordenarlas porque Postgres devuelve el JSON con las claves
@@ -305,7 +305,11 @@ function nubeJuntarPedido(b, m, s, cuenta){
   return out;
 }
 
-function nubeElegir(b, m, s, cuenta, juntar){
+/* "tumba": alguien lo borró con el botón (ver nubeAnotarBorrado). Solo
+   decide en los dos casos de abajo en que el otro lado sigue igual que en
+   la referencia. Si el otro lado lo cambió mientras tanto (un mozo le
+   agregó un café a ese pedido), ese cambio no se tira. */
+function nubeElegir(b, m, s, cuenta, juntar, tumba){
   const fb = b === undefined ? null : nubeFirma(b);
   const fm = m === undefined ? null : nubeFirma(m);
   const fs = s === undefined ? null : nubeFirma(s);
@@ -318,7 +322,9 @@ function nubeElegir(b, m, s, cuenta, juntar){
        que hace una restauración: una copia vieja tampoco lo tiene, y no
        porque alguien lo haya borrado sino porque todavía no existía. Se
        cuentan aparte para que quien llama decida con el total a la vista
-       (ver nubeJuntarConLaNube). */
+       (ver nubeJuntarConLaNube). Si está anotado como borrado a mano, no
+       hay nada que decidir ni que contar. */
+    if (tumba) return undefined;
     cuenta.borrados++;
     return cuenta.sinBorrar ? m : undefined;
   }
@@ -333,6 +339,7 @@ function nubeElegir(b, m, s, cuenta, juntar){
        Que la computadora abra del todo vacía ya está cubierto aparte; esto
        cubre el caso feo, el de perder una parte, que no lo activa y que el
        candado tampoco atrapa si no llega a la mitad. */
+    if (tumba) return undefined;
     cuenta.borradosSuyos++;
     return cuenta.sinBorrar ? s : undefined;
   }
@@ -360,7 +367,7 @@ function nubeElegir(b, m, s, cuenta, juntar){
   return s;                                   /* queda el que ya está guardado en la nube */
 }
 
-function nubeCombinarLista(base, mio, suyo, cuenta, juntar){
+function nubeCombinarLista(base, mio, suyo, cuenta, juntar, lista){
   const ib = nubeIndice(base), im = nubeIndice(mio), is = nubeIndice(suyo);
   const salida = [], puestas = {};
   /* Primero en el orden que tiene la nube, después lo que solo está acá */
@@ -369,7 +376,8 @@ function nubeCombinarLista(base, mio, suyo, cuenta, juntar){
   orden.forEach(k => {
     if (puestas[k]) return;
     puestas[k] = 1;
-    const r = nubeElegir(ib[k], im[k], is[k], cuenta, juntar);
+    const tumba = !!(lista && cuenta.tumbas && cuenta.tumbas[lista + '|' + k]);
+    const r = nubeElegir(ib[k], im[k], is[k], cuenta, juntar, tumba);
     if (r !== undefined) salida.push(r);
   });
   return salida;
@@ -402,6 +410,46 @@ function nubeProximoNum(c){ return c && typeof c.nextNum === 'number' ? c.nextNu
 function nubeBorradosAdrede(e){
   const n = e && e.config && e.config.borradosAdrede;
   return typeof n === 'number' ? n : 0;
+}
+
+/* ---------- Lo que se borró con el botón, uno por uno ----------
+   El contador de arriba cubre "Borrar todo", pero no los borrados de todos
+   los días, y esos se perdían. Pasó con productos: se borraba uno y a los
+   pocos segundos volvía. La otra computadora veía la ausencia y la tomaba
+   por un accidente, en dos casos:
+   - Si se borraban más de NUBE_BORRADOS_DE_A_UNO juntos (cuatro productos
+     que ya no van, uno atrás del otro).
+   - Si el reloj de la computadora que borró atrasaba, aunque fuera unos
+     segundos. Su fecha de guardado quedaba antes que la anterior y eso se
+     lee como "la nube volvió a una copia vieja" (ver nubeVolvioAtras).
+   En los dos casos la otra conservaba el registro y lo volvía a subir.
+   Ahora quien borra deja anotado qué borró. Esa lista viaja con el café, se
+   suma de los dos lados y gana sobre cualquier sospecha. Se olvida a los
+   30 días: para entonces las dos computadoras ya se enteraron.
+   Solo se anota lo que la nube llegó a tener. La lista viaja en cada
+   guardado y en cada respaldo, y cerrar una mesa sin cargar nada borra un
+   pedido vacío muchas veces por día: si nunca se subió, nadie más lo tiene
+   y no hay forma de que vuelva. */
+const NUBE_TUMBAS_DIAS = 30;
+function nubeAnotarBorrado(lista, id){
+  if (!S || id == null) return;
+  const base = nubeBaseLeer() || {};
+  const enLaNube = lista === 'salon.elementos' ? (base.salon || {}).elementos : base[lista];
+  if (!Array.isArray(enLaNube) || !enLaNube.some(x => x && x.id === id)) return;
+  S.borrados = nubeJuntarBorrados(S.borrados,
+    [{ clave: lista + '|' + nubeClave({ id: id }), cuando: new Date().toISOString() }]);
+}
+/* Une las dos listas sin repetir y siempre en el mismo orden: si las dos
+   computadoras tienen lo mismo, tiene que dar exactamente igual, o se
+   estarían subiendo cambios la una a la otra sin fin. */
+function nubeJuntarBorrados(a, b){
+  const desde = new Date(Date.now() - NUBE_TUMBAS_DIAS * 864e5).toISOString();
+  const m = {};
+  [].concat(Array.isArray(a) ? a : [], Array.isArray(b) ? b : []).forEach(t => {
+    if (!t || !t.clave || String(t.cuando || '') < desde) return;
+    if (!m[t.clave] || t.cuando < m[t.clave].cuando) m[t.clave] = { clave: t.clave, cuando: t.cuando };
+  });
+  return Object.keys(m).sort().map(k => m[k]);
 }
 
 /* ---------- Catálogos: lo que HAY en el café ----------
@@ -563,11 +611,17 @@ function nubeCombinar(base, mio, suyo, sinBorrar){
   const cuenta = { choques: 0, borrados: 0, borradosSuyos: 0, sinBorrar: !!sinBorrar };
   base = base || {}; mio = mio || {}; suyo = suyo || {};
   const out = nubeCombinarObjeto(base, mio, suyo, cuenta, NUBE_APARTE);
+  /* Los borrados con el botón se suman de los dos lados (ver nubeAnotarBorrado) */
+  if (mio.borrados || suyo.borrados){
+    out.borrados = nubeJuntarBorrados(mio.borrados, suyo.borrados);
+    cuenta.tumbas = {};
+    out.borrados.forEach(t => { cuenta.tumbas[t.clave] = 1; });
+  }
   /* Los pedidos son la única lista que sabe juntarse en vez de elegir un
      lado (ver nubeJuntarPedido); el resto sigue la regla común. */
   NUBE_LISTAS.forEach(k => {
     out[k] = nubeCombinarLista(base[k], mio[k], suyo[k], cuenta,
-                               k === 'pedidos' ? nubeJuntarPedido : null);
+                               k === 'pedidos' ? nubeJuntarPedido : null, k);
   });
   out.config = nubeCombinarObjeto(base.config, mio.config, suyo.config, cuenta);
   /* El número de pedido es un contador compartido: se toma el más alto
@@ -580,7 +634,8 @@ function nubeCombinar(base, mio, suyo, sinBorrar){
   out.salon = nubeCombinarObjeto(base.salon, mio.salon, suyo.salon, cuenta, ['elementos']);
   out.salon.elementos = nubeCombinarLista((base.salon || {}).elementos,
                                           (mio.salon  || {}).elementos,
-                                          (suyo.salon || {}).elementos, cuenta);
+                                          (suyo.salon || {}).elementos, cuenta,
+                                          null, 'salon.elementos');
   /* Solo se pone la fecha si alguno la tenía: dejar la clave con "undefined"
      haría que el estado combinado nunca parezca igual al de la nube, y las
      dos computadoras se estarían subiendo cambios la una a la otra sin fin. */

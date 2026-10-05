@@ -145,6 +145,7 @@ function borrarCuenta(id){
   }
   confirmar('¿Borrar la cuenta <b>' + esc(c.nombre) + '</b>?', () => {
     S.cuentas = S.cuentas.filter(x => x.id !== id);
+    nubeAnotarBorrado('cuentas', id);
     save(); refresh(); toast('Cuenta borrada');
   }, 'Borrar');
 }
@@ -227,6 +228,7 @@ function formPagoCuenta(id){
 function borrarPagoCuenta(pid, cid){
   confirmar('¿Borrar este pago? El saldo de la cuenta vuelve a subir.', () => {
     S.pagosCuenta = S.pagosCuenta.filter(x => x.id !== pid);
+    nubeAnotarBorrado('pagosCuenta', pid);
     save(); closeModal(); refresh(); verCuenta(cid); toast('Pago borrado');
   }, 'Borrar pago');
 }

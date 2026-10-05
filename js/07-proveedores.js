@@ -101,6 +101,7 @@ function borrarProv(id){
   confirmar('¿Borrar el proveedor <b>' + esc(p.nombre) + '</b>?' +
     (n ? '<br><span class="small muted">Tiene ' + n + ' compra(s) registradas; quedarán sin proveedor asignado.</span>' : ''), () => {
       S.proveedores = S.proveedores.filter(x => x.id !== id);
+      nubeAnotarBorrado('proveedores', id);
       save(); refresh(); toast('Proveedor borrado');
     }, 'Borrar');
 }
@@ -239,6 +240,7 @@ function borrarCompra(id){
   const c = S.compras.find(x => x.id === id); if (!c) return;
   confirmar('¿Borrar esta compra de <b>' + fmt(c.total) + '</b>?', () => {
     S.compras = S.compras.filter(x => x.id !== id);
+    nubeAnotarBorrado('compras', id);
     save(); refresh(); toast('Compra borrada');
   }, 'Borrar compra');
 }

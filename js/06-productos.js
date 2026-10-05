@@ -105,6 +105,7 @@ function borrarProducto(id){
     (usos ? '<br><span class="small muted">Aparece en ' + usos + ' pedido(s); esos pedidos conservan el nombre y el precio con el que se vendieron.</span>' : '') +
     '<br><span class="small muted">Si solo querés sacarlo de la carta, editalo y desmarcá “Mostrar en la pantalla de venta”.</span>', () => {
       S.productos = S.productos.filter(x => x.id !== id);
+      nubeAnotarBorrado('productos', id);
       save(); refresh(); toast('Producto borrado');
     }, 'Borrar producto');
 }
@@ -315,7 +316,13 @@ function reemplazarPorImportacion(){
 function confirmarImportacion(reemplazar){
   const lista = reemplazar ? IMP.todos : IMP.nuevos;
   if (!lista.length){ toast('No hay productos nuevos para agregar'); return; }
-  if (reemplazar) S.productos = [];
+  /* Se anota cada producto que se saca: si no, la otra computadora ve
+     desaparecer la carta entera, lo toma por un accidente y la devuelve, y
+     quedan la vieja y la nueva juntas (ver nubeAnotarBorrado). */
+  if (reemplazar){
+    S.productos.forEach(p => nubeAnotarBorrado('productos', p.id));
+    S.productos = [];
+  }
   lista.forEach(p => S.productos.push(Object.assign({ id: uid() }, p)));
   save(); closeModal(); refresh();
   toast(lista.length + ' producto(s) importados');

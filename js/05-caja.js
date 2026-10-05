@@ -414,6 +414,7 @@ function borrarMovimiento(id){
   const m = S.movimientos.find(x => x.id === id); if (!m) return;
   confirmar('¿Borrar <b>' + esc(m.concepto) + '</b> por ' + fmt(m.monto) + '?', () => {
     S.movimientos = S.movimientos.filter(x => x.id !== id);
+    nubeAnotarBorrado('movimientos', id);
     save(); refresh(); toast('Movimiento borrado');
   }, 'Borrar');
 }
@@ -478,6 +479,7 @@ function reabrirTurno(id){
   confirmar('¿Reabrir el turno <b>' + esc(c.turno || '') + '</b> del ' + fechaCorta(c.fecha + 'T12:00') + '?<br><br>' +
     'Se borra ese arqueo y sus ventas vuelven al turno abierto. Los pedidos no se tocan.', () => {
       S.cierres = S.cierres.filter(x => x.id !== id);
+      nubeAnotarBorrado('cierres', id);
       save(); closeModal(); refresh(); toast('Turno reabierto');
     }, 'Sí, reabrir');
 }

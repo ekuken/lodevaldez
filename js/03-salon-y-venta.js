@@ -292,6 +292,7 @@ function agregarElemento(tipo){
 function eliminarElemento(){
   const e = selObj(); if (!e) return;
   S.salon.elementos = S.salon.elementos.filter(x => x.id !== e.id);
+  nubeAnotarBorrado('salon.elementos', e.id);
   ED.kind = null; ED.id = null; save(); refresh(); toast('Elemento eliminado');
 }
 function setProporcion(v){
@@ -408,6 +409,7 @@ function eliminarMesa(id){
   if (pedidoAbiertoDeMesa(id)) return toast('La mesa ' + m.num + ' tiene una cuenta abierta');
   confirmar('¿Eliminar la <b>mesa ' + m.num + '</b>? Los pedidos ya cobrados no se pierden.', () => {
     S.mesas = S.mesas.filter(x => x.id !== id);
+    nubeAnotarBorrado('mesas', id);
     if (ED.id === id){ ED.kind = null; ED.id = null; }
     save(); refresh(); toast('Mesa ' + m.num + ' eliminada');
   }, 'Eliminar mesa');
@@ -966,6 +968,7 @@ function cerrarPOS(){
   const p = pedidoPOS();
   if (p && p.estado === 'abierto' && !p.items.length){
     S.pedidos = S.pedidos.filter(x => x.id !== p.id);
+    nubeAnotarBorrado('pedidos', p.id);
     if (S.config.nextNum === p.num + 1) S.config.nextNum = p.num;
     save();
   }
@@ -977,6 +980,7 @@ function anularPedido(){
   confirmar('¿Anular el <b>pedido #' + p.num + '</b>? Se libera la mesa y no se contabiliza la venta.', () => {
     if (!p.items.length){
       S.pedidos = S.pedidos.filter(x => x.id !== p.id);
+      nubeAnotarBorrado('pedidos', p.id);
       if (S.config.nextNum === p.num + 1) S.config.nextNum = p.num;
     } else {
       p.estado = 'anulado'; p.cerrado = new Date().toISOString();

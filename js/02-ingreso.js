@@ -206,6 +206,7 @@ function borrarUsuario(id){
     return toast('Tiene que quedar al menos un administrador');
   confirmar('¿Borrar el usuario <b>' + esc(u.nombre) + '</b>? Los pedidos que atendió conservan su nombre.', () => {
     S.usuarios = S.usuarios.filter(x => x.id !== id);
+    nubeAnotarBorrado('usuarios', id);
     save(); refresh(); toast('Usuario borrado');
   }, 'Borrar');
 }
