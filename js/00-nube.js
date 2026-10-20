@@ -42,15 +42,16 @@ function nubeBaseKey(){ return 'cafe_base_v1_' + LOCAL; }
 function nubeBaseLeer(){
   if (NUBE.base) return NUBE.base;
   try{
-    const r = localStorage.getItem(nubeBaseKey());
+    const r = almacenLeer(nubeBaseKey());
     NUBE.base = r ? JSON.parse(r) : null;
   }catch(e){ NUBE.base = null; }
   return NUBE.base;
 }
 function nubeBaseEscribir(o){
   NUBE.base = o || {};
-  try{ localStorage.setItem(nubeBaseKey(), JSON.stringify(NUBE.base)); }
-  catch(e){ console.warn('[nube] no se pudo guardar la referencia para combinar:', e); }
+  const aviso = e => console.warn('[nube] no se pudo guardar la referencia para combinar:', e);
+  try{ almacenEscribir(nubeBaseKey(), JSON.stringify(NUBE.base), aviso); }
+  catch(e){ aviso(e); }
 }
 
 /* Errores que NO son falta de internet sino que la base todavía no está
@@ -569,20 +570,21 @@ function nubeVolvioAtras(remoto, base){
    sola —la última— y se recupera con nubeVolverAtras() desde la consola. */
 function nubeCopiaKey(){ return 'cafe_antes_v1_' + LOCAL; }
 function nubeGuardarCopiaLocal(motivo){
+  const aviso = e => console.warn('[nube] no se pudo guardar la copia de antes:', e);
   try{
-    localStorage.setItem(nubeCopiaKey(), JSON.stringify({
+    almacenEscribir(nubeCopiaKey(), JSON.stringify({
       cuando: new Date().toISOString(), motivo: motivo, datos: S
-    }));
-  }catch(e){ console.warn('[nube] no se pudo guardar la copia de antes:', e); }
+    }), aviso);
+  }catch(e){ aviso(e); }
 }
 function nubeVolverAtras(){
   let c = null;
-  try{ c = JSON.parse(localStorage.getItem(nubeCopiaKey()) || 'null'); }catch(e){}
+  try{ c = JSON.parse(almacenLeer(nubeCopiaKey()) || 'null'); }catch(e){}
   if (!c || !c.datos){ console.log('[nube] no hay copia guardada en esta computadora.'); return false; }
   console.log('[nube] volviendo a como estaba el ' + c.cuando + ' (' +
               nubeCuantos(c.datos) + ' registros). Motivo de la copia: ' + c.motivo);
   S = c.datos;
-  try{ localStorage.setItem(KEY(), JSON.stringify(S)); }catch(e){}
+  try{ almacenEscribir(KEY(), JSON.stringify(S)); }catch(e){}
   /* Se olvida la referencia: con la copia puesta, lo que la nube tenga hay
      que volver a mirarlo de cero en vez de restarle lo que ya no vale. */
   nubeBaseEscribir({});
@@ -770,7 +772,7 @@ function nubeJuntarConLaNube(remoto, tomarLaNubeSinCombinar){
     S.salon  = Object.assign({}, DEFAULT_STATE.salon,  S.salon  || {});
   }
   if (typeof migrar === 'function'){ try{ migrar(); }catch(e){ console.error('[nube] migrar():', e); } }
-  try{ localStorage.setItem(KEY(), JSON.stringify(S)); }catch(e){}
+  try{ almacenEscribir(KEY(), JSON.stringify(S)); }catch(e){}
   if (res.choques){
     console.warn('[nube] ' + res.choques + ' registro(s) se editaron en las dos computadoras ' +
                  'a la vez; quedó la versión que ya estaba en la nube.');

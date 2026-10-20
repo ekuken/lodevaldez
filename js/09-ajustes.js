@@ -181,7 +181,7 @@ function borrarTodo(){
        accidente y lo devuelve (ver nubeBorradosAdrede). El contador se lleva
        del estado viejo, que en la línea siguiente se pierde. */
     const marcaBorrado = (typeof nubeBorradosAdrede === 'function' ? nubeBorradosAdrede(S) : 0) + 1;
-    localStorage.removeItem(KEY());
+    almacenBorrar(KEY());
     S = structuredClone(DEFAULT_STATE); seed();
     S.config.borradosAdrede = marcaBorrado;
     save();

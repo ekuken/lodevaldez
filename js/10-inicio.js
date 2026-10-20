@@ -4,6 +4,8 @@
 
 /* Arranca el sistema con los datos del local ya elegido */
 async function arrancarLocal(){
+  /* Trae a memoria lo guardado en esta computadora (ver almacenPreparar) */
+  await almacenPreparar([KEY(), nubeBaseKey(), nubeCopiaKey()]);
   load();                                   /* lo guardado en esta computadora */
   /* La nube NO frena el dibujo. Antes se esperaba su respuesta para recién
      ahí mostrar el salón, y esa espera no tenía límite: con el internet del

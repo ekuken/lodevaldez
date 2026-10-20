@@ -253,8 +253,12 @@ begin
   insert into public.respaldos (local_id, datos) values (p_local, p_datos);
   perform public.podar_respaldos(p_local);
 
+  -- Si salió bien no se devuelven los datos: la computadora los acaba de
+  -- mandar y no los usa (solo mira la versión). Devolverlos era bajar el
+  -- café entero en cada guardado, y eso es casi todo el Egress del plan
+  -- gratis. En el conflicto de arriba sí van, porque ahí hacen falta.
   return query
-    select true, l.version, l.datos from public.locales l where l.id = p_local;
+    select true, l.version, null::jsonb from public.locales l where l.id = p_local;
 end;
 $func$;
 

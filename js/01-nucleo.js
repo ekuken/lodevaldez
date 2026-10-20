@@ -62,9 +62,102 @@ let SEMBRADO_AHORA = false;
 
 function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
+/* ---------- Dónde se guarda el café en esta computadora ----------
+   Hasta el 20/10/2026 iba todo en localStorage, que da unos 5 millones de
+   caracteres por sitio. El café se guarda tres veces (los datos, la
+   referencia para combinar y la copia de antes de sincronizar) y cada
+   pedido cobrado ocupa unos 900: con ~1.850 pedidos se llenaba. Valdez llegó
+   en octubre, y desde ahí cada guardado avisaba "¿almacenamiento lleno?" y
+   la computadora no podía guardar nada para trabajar sin internet.
+   Ahora esas tres copias van a IndexedDB, que tiene lugar de sobra. Leerla
+   es asincrónico, así que al arrancar se cargan a memoria (almacenPreparar)
+   y desde ahí se leen al instante, como antes. Escribir se larga y no se
+   espera: las escrituras se aplican en el orden en que se piden.
+   Lo que había en localStorage se pasa solo la primera vez y recién se
+   borra cuando ya quedó escrito en IndexedDB. Si IndexedDB no anda
+   (navegador viejo, modo privado), se sigue usando localStorage. */
+const ALMACEN = { db: null, abierto: false, cache: {} };
+/* Todo con límite de tiempo. Abriendo el sistema como archivo suelto
+   (file://), Chrome puede no contestar NUNCA: ni éxito ni error. Sin el
+   límite, el arranque se quedaba esperando y la pantalla en blanco. */
+const ALMACEN_ESPERA = 3000;
+function almacenAbrir(){
+  return new Promise(res => {
+    let listo = false;
+    const fin = db => { if (!listo){ listo = true; res(db); } };
+    setTimeout(() => fin(null), ALMACEN_ESPERA);
+    try{
+      const r = indexedDB.open('cafe_sistema', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('kv');
+      r.onsuccess = () => { if (listo) r.result.close(); else fin(r.result); };
+      r.onerror = () => fin(null);
+      r.onblocked = () => fin(null);
+    }catch(e){ fin(null); }
+  });
+}
+function almacenPedido(modo, hacer){
+  return new Promise(res => {
+    let listo = false;
+    const fin = x => { if (!listo){ listo = true; res(x); } };
+    setTimeout(() => fin({ ok: false, error: new Error('IndexedDB no contestó') }), ALMACEN_ESPERA);
+    try{
+      const tx = ALMACEN.db.transaction('kv', modo);
+      const r = hacer(tx.objectStore('kv'));
+      tx.oncomplete = () => fin({ ok: true, valor: r.result });
+      tx.onerror = tx.onabort = () => fin({ ok: false, error: tx.error });
+    }catch(e){ fin({ ok: false, error: e }); }
+  });
+}
+async function almacenPreparar(claves){
+  if (!ALMACEN.abierto){
+    ALMACEN.abierto = true;
+    ALMACEN.db = await almacenAbrir();
+    if (!ALMACEN.db) console.warn('[almacén] sin IndexedDB: se sigue guardando en localStorage.');
+    /* Pide que el navegador no lo borre solo si falta disco */
+    try{ if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
+  }
+  for (const k of claves){
+    let ls = null;
+    try{ ls = localStorage.getItem(k); }catch(e){}
+    if (!ALMACEN.db){ ALMACEN.cache[k] = ls; continue; }
+    const r = await almacenPedido('readonly', st => st.get(k));
+    let v = r.ok && typeof r.valor === 'string' ? r.valor : null;
+    if (v == null && ls != null){
+      /* Primera vez con esta versión: se pasa lo de localStorage */
+      const w = await almacenPedido('readwrite', st => st.put(ls, k));
+      if (w.ok) v = ls;
+      else { ALMACEN.cache[k] = ls; continue; }   /* no se pudo: se queda donde estaba */
+    }
+    /* Ya está a salvo en IndexedDB: se libera el lugar en localStorage */
+    if (v != null && ls != null){ try{ localStorage.removeItem(k); }catch(e){} }
+    ALMACEN.cache[k] = v;
+  }
+}
+function almacenLeer(k){
+  if (Object.prototype.hasOwnProperty.call(ALMACEN.cache, k)) return ALMACEN.cache[k];
+  try{ return localStorage.getItem(k); }catch(e){ return null; }
+}
+/* Recibe el texto ya armado. Si falla avisa con alFallar, que puede llegar
+   un rato después: la escritura en IndexedDB termina sola. */
+function almacenEscribir(k, texto, alFallar){
+  ALMACEN.cache[k] = texto;
+  if (ALMACEN.db){
+    almacenPedido('readwrite', st => st.put(texto, k)).then(r => {
+      if (!r.ok && alFallar) alFallar(r.error);
+    });
+    return;
+  }
+  try{ localStorage.setItem(k, texto); }catch(e){ if (alFallar) alFallar(e); }
+}
+function almacenBorrar(k){
+  delete ALMACEN.cache[k];
+  if (ALMACEN.db) almacenPedido('readwrite', st => st.delete(k));
+  try{ localStorage.removeItem(k); }catch(e){}
+}
+
 function load(){
   try{
-    const raw = localStorage.getItem(KEY());
+    const raw = almacenLeer(KEY());
     if (raw){
       const d = JSON.parse(raw);
       S = Object.assign({}, structuredClone(DEFAULT_STATE), d);
@@ -85,8 +178,10 @@ function load(){
    programa la copia a la nube. */
 function save(){
   S.guardado = new Date().toISOString();
-  try{ localStorage.setItem(KEY(), JSON.stringify(S)); }
-  catch(e){ toast('⚠ No se pudo guardar (¿almacenamiento lleno?)'); console.error(e); }
+  const alFallar = e => { toast('⚠ No se pudo guardar (¿almacenamiento lleno?)'); console.error(e); };
+  let texto;
+  try{ texto = JSON.stringify(S); }catch(e){ alFallar(e); }
+  if (texto !== undefined) almacenEscribir(KEY(), texto, alFallar);
   if (typeof nubeGuardar === 'function') nubeGuardar();
 }
 
