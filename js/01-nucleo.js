@@ -540,6 +540,7 @@ const VISTAS = {
   mesas:       { t:'Mesas',       s:'Estado del salón' },
   pedidos:     { t:'Pedidos',     s:'Historial y filtros' },
   caja:        { t:'Caja',        s:'Ventas y cierre del día' },
+  estadisticas:{ t:'Estadísticas', s:'Cómo viene el café en un período' },
   cuentas:     { t:'Cuentas',     s:'Cuentas corrientes y consumos' },
   productos:   { t:'Productos',   s:'Carta y precios' },
   proveedores: { t:'Proveedores', s:'Contactos y compras' },
@@ -569,7 +570,7 @@ function refresh(){
   document.title = S.config.nombre + ' — Sistema';
   const bc = cuentasConSaldo().length;
   const bCta = $('#badgeCuentas'); bCta.textContent = bc; bCta.classList.toggle('hide', bc === 0);
-  ({ mesas: renderMesas, pedidos: renderPedidos, caja: renderCaja, cuentas: renderCuentas,
+  ({ mesas: renderMesas, pedidos: renderPedidos, caja: renderCaja, estadisticas: renderEstadisticas, cuentas: renderCuentas,
      productos: renderProductos, proveedores: renderProveedores, ajustes: renderAjustes })[VIEW]();
 }
 

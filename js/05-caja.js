@@ -4,7 +4,7 @@
 
 /* "dia" es el hoy() que corría cuando se fijó la fecha; sirve para saber si
    la pantalla se quedó dormida de un día para el otro (ver alDiaCAJA). */
-let CAJA = { fecha: hoy(), dia: hoy() };
+let CAJA = { fecha: hoy(), dia: hoy(), borrador: null, mostrado: null };
 
 /* ---------- La pantalla amanece con la fecha de anoche ----------
    En el café nadie cierra el navegador: la computadora sigue mostrando la
@@ -61,9 +61,14 @@ function enTurno(iso, t){
 /* Los gastos, compras y cobros se cargan a mano y llevan la fecha que quiera
    quien los carga. Para saber a qué turno pertenecen se usa la hora en que
    se cargaron. Si se cargaron otro día (porque la fecha se puso a mano),
-   caen en el primer turno, para que no queden afuera de todos. */
+   caen en el primer turno, para que no queden afuera de todos.
+   El día de carga se saca con dkey(), en hora de acá. Antes se cortaban
+   los primeros 10 caracteres de "creado", que está en hora universal (3
+   horas adelante): lo que se cargaba después de las 21 figuraba como del
+   día siguiente y caía en el turno de la mañana, ya cerrado. El gasto
+   desaparecía del turno de la tarde y su arqueo daba faltante. */
 function enTurnoManual(creado, f, t){
-  if (!creado || String(creado).slice(0, 10) !== f) return !!t.primero;
+  if (!msDe(creado) || dkey(creado) !== f) return !!t.primero;
   return enTurno(creado, t);
 }
 
@@ -110,7 +115,7 @@ function numerosTurno(f, t){
   const gastosEfe  = redondear(movs.filter(m => m.tipo !== 'ingreso' && m.medio === 'efectivo').reduce((a, m) => a + m.monto, 0));
   const comprasEfe = redondear(compras.filter(c => c.pago === 'efectivo').reduce((a, c) => a + c.total, 0));
   return {
-    pedidos: pedidos, porPago: porPago,
+    pedidos: pedidos, porPago: porPago, cobros: cobros, movs: movs, compras: compras,
     ventas: redondear(pedidos.reduce((a, p) => a + totalCobrado(p), 0)),
     efectivo: efectivo, cobrosEfe: cobrosEfe, extraEfe: extraEfe,
     gastosEfe: gastosEfe, comprasEfe: comprasEfe,
@@ -118,6 +123,53 @@ function numerosTurno(f, t){
     sale: redondear(comprasEfe + gastosEfe)
   };
 }
+
+/* ---------- Lo que se guarda del turno al cerrarlo ----------
+   El ticket del arqueo se reimprime con lo que había al cerrar, no con lo
+   que da hoy recalculando: si después se anuló un pedido o se cambió una
+   forma de pago, el ticket viejo tiene que seguir sumando igual que el
+   papel que se firmó. */
+function detalleTurno(t){
+  return { porPago: Object.assign({}, t.porPago), pedidos: t.pedidos.length,
+           efectivo: t.efectivo, cobrosEfe: t.cobrosEfe, extraEfe: t.extraEfe,
+           gastosEfe: t.gastosEfe, comprasEfe: t.comprasEfe };
+}
+
+/* ---------- Un turno cerrado al que después le cambiaron los números ----------
+   Si la otra computadora estuvo sin internet y cobró antes del cierre,
+   esas ventas llegan después y caen en un turno que ya se contó: no
+   aparecen en ningún arqueo. Lo mismo un pedido anulado o una forma de
+   pago corregida después de cerrar. No se toca el cierre (es lo que se
+   contó en su momento); se avisa cuánto daría el esperado hoy. */
+function cambioDesdeElCierre(c, turno){
+  if (!c || typeof c.efectivo !== 'number' || typeof c.salidas !== 'number') return null;
+  const t = numerosTurno(c.fecha, turno);
+  const dEnt = redondear(t.entra - c.efectivo), dSal = redondear(t.sale - c.salidas);
+  const dVen = typeof c.ventas === 'number' ? redondear(t.ventas - c.ventas) : 0;
+  if (Math.abs(dEnt) < 0.5 && Math.abs(dSal) < 0.5 && Math.abs(dVen) < 0.5) return null;
+  return { ventas: dVen, entra: dEnt, sale: dSal,
+           esperadoHoy: redondear((c.fondo || 0) + t.entra - t.sale) };
+}
+
+/* ---------- El turno anterior quedó sin cerrar ----------
+   El fondo de hoy se sugiere con el cambio que dejó el último cierre. Si
+   el último día con ventas terminó con un turno abierto, ese cambio es de
+   antes y no es lo que hay en el cajón. Se mira el último día con algo
+   cobrado antes de f. */
+function turnoSinCerrarAntes(f){
+  let ult = '';
+  S.pedidos.forEach(p => {
+    if (p.estado !== 'cerrado' || !p.cerrado) return;
+    const d = dkey(p.cerrado);
+    if (d < f && d > ult) ult = d;
+  });
+  if (!ult) return null;
+  const t = numerosTurno(ult, turnoAbierto(ult));
+  if (!t.pedidos.length && !t.entra && !t.sale) return null;
+  return { fecha: ult, n: t.pedidos.length, ventas: t.ventas, efectivo: redondear(t.entra - t.sale) };
+}
+
+function irACaja(f){ CAJA.fecha = f; if (VIEW === 'caja') refresh(); else go('caja'); }
 
 function moverDia(d){
   const x = new Date(CAJA.fecha + 'T12:00:00');
@@ -146,6 +198,9 @@ function renderCaja(){
   const unidades = dia.reduce((a, p) => a + p.items.reduce((x, i) => x + i.cant, 0), 0);
   const descuentos = dia.reduce((a, p) => a + (p.descuento || 0), 0);
   const costo = dia.reduce((a, p) => a + p.items.reduce((x, i) => { const pr = prod(i.pid); return x + (pr ? pr.costo * i.cant : 0); }, 0), 0);
+  /* El margen se mide sin el recargo de crédito: ese recargo cubre la
+     comisión de la tarjeta, no es ganancia del café. */
+  const neto = ventas - recargos;
   const comprasDia = S.compras.filter(c => c.fecha === f);
   const egresos = comprasDia.reduce((a, c) => a + c.total, 0);
 
@@ -155,7 +210,7 @@ function renderCaja(){
   h += '<div class="kpis" style="margin-bottom:18px">' +
     kpi('Ventas del día', fmt(ventas), dia.length + ' pedido(s) cobrados', true) +
     kpi('Ticket promedio', fmt(dia.length ? ventas / dia.length : 0), unidades + ' unidades vendidas') +
-    kpi('Margen estimado', fmt(ventas - costo), (ventas ? Math.round((ventas - costo) / ventas * 100) : 0) + '% sobre la venta') +
+    kpi('Margen estimado', fmt(neto - costo), (neto ? Math.round((neto - costo) / neto * 100) : 0) + '% sobre la venta') +
     kpi('Salidas del día', fmt(egresos + egresosMov), comprasDia.length + ' compra(s) · ' + movs.filter(m => m.tipo !== 'ingreso').length + ' gasto(s)') +
   '</div>';
 
@@ -195,7 +250,9 @@ function renderCaja(){
 
   /* --- Ventas por hora --- */
   const horas = {};
-  dia.forEach(p => { const hh = new Date(p.cerrado).getHours(); horas[hh] = (horas[hh] || 0) + total(p); });
+  /* Con el recargo incluido, igual que "Ventas del día": si no, las horas
+     no sumaban el total de arriba los días con pagos con crédito. */
+  dia.forEach(p => { const hh = new Date(p.cerrado).getHours(); horas[hh] = (horas[hh] || 0) + totalCobrado(p); });
   const hk = Object.keys(horas).map(Number).sort((a, b) => a - b);
   const maxH = Math.max(1, ...Object.values(horas));
   h += '<div class="card"><div class="hd"><h3>🕐 Ventas por hora</h3></div><div class="bd">' +
@@ -245,20 +302,28 @@ function renderCaja(){
     : 'No hay ningún cierre anterior: poné el cambio con el que abrieron la caja.';
   const hayMovimiento = t.pedidos.length || t.entra || t.sale;
 
-  h += '<div class="card"><div class="hd"><h3>🧮 Cierre de caja</h3>' +
+  h += '<div class="card" style="min-width:0"><div class="hd"><h3>🧮 Cierre de caja</h3>' +
     (cerrados.length
       ? '<span class="pill ok">' + cerrados.length + ' turno(s) cerrado(s)</span>'
       : '<span class="pill warn">Sin cerrar</span>') +
     '</div><div class="bd">';
 
   if (cerrados.length){
+    const cambiados = [];
     h += '<div class="tbl-wrap" style="margin-bottom:16px"><table><thead><tr>' +
         '<th>Turno</th><th>Hasta</th><th>Cerró</th><th class="num">Ventas</th>' +
         '<th class="num">Esperado</th><th class="num">Contado</th><th class="num">Diferencia</th>' +
         '<th class="num">Dejó de cambio</th><th></th>' +
       '</tr></thead><tbody>' +
-      cerrados.map(x => { const c = x.cierre; return '<tr>' +
-        '<td><b>' + esc(c.turno || 'Turno') + '</b></td>' +
+      cerrados.map((x, i) => { const c = x.cierre;
+        const cambio = cambioDesdeElCierre(c, x);
+        if (cambio) cambiados.push({ c: c, d: cambio });
+        /* Solo se reabre el último: si se reabría uno del medio, sus ventas
+           pasaban al turno siguiente, que ya estaba cerrado y contado, y no
+           volvían a aparecer en ningún arqueo. */
+        const ultimo = i === cerrados.length - 1;
+        return '<tr>' +
+        '<td><b>' + esc(c.turno || 'Turno') + '</b>' + (cambio ? ' <span class="pill warn" title="Cambió después de cerrar">⚠</span>' : '') + '</td>' +
         '<td class="mono small">' + hora(c.hasta) + '</td>' +
         '<td class="small">' + esc(c.usuarioNombre || '—') + '</td>' +
         '<td class="num">' + fmt(c.ventas) + '</td>' +
@@ -269,10 +334,48 @@ function renderCaja(){
         '<td class="num mono">' + fmt(cambioQueDejo(c)) + '</td>' +
         '<td class="row" style="flex-wrap:nowrap;gap:4px">' +
           '<button class="btn xs" onclick="imprimirCierre(\'' + c.id + '\')" title="Imprimir este arqueo">🖨</button>' +
-          (esAdmin() ? '<button class="btn xs dan" onclick="reabrirTurno(\'' + c.id + '\')" title="Reabrir el turno">×</button>' : '') +
+          (esAdmin() && ultimo ? '<button class="btn xs dan" onclick="reabrirTurno(\'' + c.id + '\')" title="Reabrir el turno">×</button>' : '') +
         '</td></tr>'; }).join('') +
+      (cerrados.length > 1
+        ? (() => {
+            const v = cerrados.reduce((a, x) => a + (x.cierre.ventas || 0), 0);
+            const d = redondear(cerrados.reduce((a, x) => a + (x.cierre.dif || 0), 0));
+            return '<tr><td colspan="3"><b>Total de los turnos cerrados</b></td>' +
+              '<td class="num"><b>' + fmt(v) + '</b></td><td></td><td></td>' +
+              '<td class="num"><span class="pill ' + (Math.abs(d) < 0.005 ? 'ok' : d > 0 ? 'info' : 'bad') + '">' + fmt(d) + '</span></td>' +
+              '<td></td><td></td></tr>';
+          })()
+        : '') +
       '</tbody></table></div>';
+    h += cambiados.map(x =>
+      '<div class="alert warn small" style="margin-bottom:12px"><span>⚠</span><div>' +
+        '<b>' + esc(x.c.turno || 'Un turno') + ' cambió después de cerrarse.</b> ' +
+        (x.d.ventas ? 'Ventas ' + (x.d.ventas > 0 ? '+' : '−') + ' ' + fmt(Math.abs(x.d.ventas)) + '. ' : '') +
+        (x.d.entra || x.d.sale
+          ? 'Con los datos de ahora, el efectivo esperado daría ' + fmt(x.d.esperadoHoy) +
+            ' (al cerrar dio ' + fmt(x.c.esperado) + '). '
+          : '') +
+        'Puede ser una venta de la otra computadora que llegó tarde, un pedido anulado o una forma de pago corregida. ' +
+        'El arqueo guardado no se toca.</div></div>').join('');
   }
+
+  /* Lo que se está tipeando en el arqueo sobrevive al repintado: cada vez
+     que la otra computadora cobra algo, la caja se vuelve a dibujar, y antes
+     se borraban el cambio y el efectivo que se estaban contando. */
+  const b = (CAJA.borrador && CAJA.borrador.fecha === f && CAJA.borrador.desde === abierto.desde) ? CAJA.borrador : null;
+  if (!b) CAJA.borrador = null;
+  const val = (k, def) => esc(b && b[k] != null ? b[k] : def);
+  /* Con esto se compara al cerrar, por si entró algo entre que se dibujó y
+     se apretó el botón (ver guardarCierre) */
+  CAJA.mostrado = { fecha: f, desde: abierto.desde, entra: t.entra, sale: t.sale, ventas: t.ventas };
+
+  const sinCerrar = !cerrados.length ? turnoSinCerrarAntes(f) : null;
+  if (sinCerrar)
+    h += '<div class="alert warn small" style="margin-bottom:12px"><span>⚠</span><div>' +
+      '<b>El ' + fechaCorta(sinCerrar.fecha + 'T12:00') + ' quedó un turno sin cerrar</b> (' +
+      sinCerrar.n + ' pedido(s), ' + fmt(sinCerrar.ventas) + ' en ventas). ' +
+      'El fondo inicial sugerido sale del último cierre, así que puede no ser lo que hay en el cajón: contalo. ' +
+      '<a href="#" onclick="irACaja(\'' + sinCerrar.fecha + '\');return false">Ir a ese día</a></div></div>';
 
   h += '<div class="row" style="justify-content:space-between;margin-bottom:8px">' +
       '<b>' + (cerrados.length ? 'Turno abierto' : 'Arqueo del día') + '</b>' +
@@ -288,14 +391,14 @@ function renderCaja(){
     '<div class="sep"></div>' +
     '<div class="grid2" style="margin-bottom:12px">' +
       '<div class="field"><label>Nombre del turno</label>' +
-        '<input type="text" id="ceTurno" value="' + esc(nombreTurnoSugerido(cerrados.length)) + '" placeholder="Mañana, Tarde…"></div>' +
+        '<input type="text" id="ceTurno" value="' + val('turno', nombreTurnoSugerido(cerrados.length)) + '" placeholder="Mañana, Tarde…" oninput="calcCierre()"></div>' +
       '<div class="field"><label>Lo cierra</label>' +
         '<input type="text" value="' + esc(USUARIO ? USUARIO.nombre : '—') + '" disabled></div>' +
     '</div>' +
     '<div class="grid3">' +
-      '<div class="field"><label>Fondo inicial de caja</label><input type="number" step="any" id="ceFondo" value="' + fondoSug + '" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
-      '<div class="field"><label>💵 Cambio que queda</label><input type="number" step="any" id="ceCambio" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
-      '<div class="field"><label>💰 Efectivo que se saca</label><input type="number" step="any" id="ceEfe" placeholder="0" oninput="calcCierre(' + t.entra + ',' + t.sale + ')"></div>' +
+      '<div class="field"><label>Fondo inicial de caja</label><input type="number" min="0" step="any" id="ceFondo" value="' + val('fondo', fondoSug) + '" oninput="calcCierre()"></div>' +
+      '<div class="field"><label>💵 Cambio que queda</label><input type="number" min="0" step="any" id="ceCambio" placeholder="0" value="' + val('cambio', '') + '" oninput="calcCierre()"></div>' +
+      '<div class="field"><label>💰 Efectivo que se saca</label><input type="number" min="0" step="any" id="ceEfe" placeholder="0" value="' + val('efe', '') + '" oninput="calcCierre()"></div>' +
     '</div>' +
     '<div class="small muted" style="margin-top:6px;line-height:1.5">' + origenFondo +
       ' El <b>cambio que queda</b> en el cajón es el fondo inicial del turno que sigue.</div>' +
@@ -303,9 +406,9 @@ function renderCaja(){
       '<b class="mono" id="ceContTxt">' + fmt(0) + '</b></div>' +
     '<div id="ceDif" class="alert info" style="margin-top:12px">Cargá el cambio y el efectivo para ver la diferencia.</div>' +
     '<div class="field" style="margin-top:10px"><label>Observaciones</label>' +
-      '<input type="text" id="ceNota" placeholder="Ej: retiro de $10.000 al mediodía"></div>' +
+      '<input type="text" id="ceNota" value="' + val('nota', '') + '" placeholder="Ej: retiro de $10.000 al mediodía" oninput="calcCierre()"></div>' +
     '<div class="row" style="margin-top:12px">' +
-      '<button class="btn pri grow" onclick="guardarCierre(' + t.entra + ',' + t.sale + ',' + t.ventas + ')"' +
+      '<button class="btn pri grow" onclick="guardarCierre()"' +
         (hayMovimiento ? '' : ' disabled') + '>🧮 Cerrar turno</button>' +
     '</div>' +
     (hayMovimiento ? '' : '<div class="small muted" style="margin-top:8px">Todavía no hubo ventas ni movimientos en este turno.</div>') +
@@ -316,7 +419,7 @@ function renderCaja(){
 
   h += htmlMozosYGastos(dia, movs, f);
   $('#v-caja').innerHTML = h;
-  calcCierre(t.entra, t.sale);
+  calcCierre(true);
 }
 
 /* ---------- Ventas por mozo y gastos del día ---------- */
@@ -423,49 +526,81 @@ function borrarMovimiento(id){
 function contadoCierre(){
   const c = $('#ceCambio'), e = $('#ceEfe');
   const vacio = (!c || c.value === '') && (!e || e.value === '');
-  return { vacio: vacio, total: num(c ? c.value : 0) + num(e ? e.value : 0) };
+  const cambio = num(c ? c.value : 0), efe = num(e ? e.value : 0);
+  const fondo = num($('#ceFondo') ? $('#ceFondo').value : 0);
+  return { vacio: vacio, cambio: cambio, efe: efe, total: redondear(cambio + efe),
+           negativo: cambio < 0 || efe < 0 || fondo < 0 };
 }
 
-function calcCierre(entra, sale){
-  const fondo = num($('#ceFondo') ? $('#ceFondo').value : 0);
-  const espN = fondo + entra - sale;
+/* Se llama al tipear (guarda el borrador) y después de dibujar (solo
+   recalcula: lo que hay en los campos ya salió del borrador). */
+function calcCierre(soloCalcular){
+  const m = CAJA.mostrado; if (!m) return;
+  const v = id => { const el = $('#' + id); return el ? el.value : ''; };
+  if (soloCalcular !== true && $('#ceCambio'))
+    CAJA.borrador = { fecha: m.fecha, desde: m.desde, turno: v('ceTurno'), fondo: v('ceFondo'),
+                      cambio: v('ceCambio'), efe: v('ceEfe'), nota: v('ceNota') };
+  const fondo = num(v('ceFondo'));
+  const espN = redondear(fondo + m.entra - m.sale);
   const esp = $('#ceEsp'); if (esp) esp.textContent = fmt(espN);
   const ft = $('#ceFondoTxt'); if (ft) ft.textContent = fmt(fondo);
   const cont = contadoCierre();
   const ct = $('#ceContTxt'); if (ct) ct.textContent = fmt(cont.total);
   const d = $('#ceDif'); if (!d) return;
   if (cont.vacio){ d.className = 'alert info'; d.innerHTML = 'Cargá el cambio y el efectivo para ver la diferencia.'; return; }
-  const dif = cont.total - espN;
+  const dif = redondear(cont.total - espN);
+  if (cont.negativo){ d.className = 'alert warn'; d.innerHTML = '<span>⚠</span><div>Hay un importe en negativo: revisá los números.</div>'; return; }
   if (Math.abs(dif) < 0.005){ d.className = 'alert info'; d.innerHTML = '<span>✓</span><div><b>Caja justa.</b> El efectivo contado coincide con lo esperado.</div>'; }
   else if (dif > 0){ d.className = 'alert info'; d.innerHTML = '<span>▲</span><div><b>Sobrante de ' + fmt(dif) + '</b> respecto de lo esperado.</div>'; }
   else { d.className = 'alert warn'; d.innerHTML = '<span>▼</span><div><b>Faltante de ' + fmt(-dif) + '</b> respecto de lo esperado.</div>'; }
 }
 
-function guardarCierre(entra, sale, ventas){
+function guardarCierre(){
+  if (!soloAdmin('cerrar la caja')) return;
   const f = CAJA.fecha;
   const abierto = turnoAbierto(f);
+  /* Los números se vuelven a sacar ahora, no se toman de cuando se dibujó
+     la pantalla. Si en el medio entró una venta (de la otra computadora, o
+     un cobro hecho con la caja abierta atrás), el cierre la abarcaba por
+     horario pero no la sumaba al esperado, y esa plata no figuraba en
+     ningún arqueo. Si cambió algo, se repinta y se pide confirmar de nuevo. */
+  const t = numerosTurno(f, abierto);
+  const m = CAJA.mostrado;
+  if (!m || m.fecha !== f || m.desde !== abierto.desde ||
+      m.entra !== t.entra || m.sale !== t.sale || m.ventas !== t.ventas){
+    refresh();
+    return toast('Entraron movimientos nuevos mientras contabas: revisá el efectivo esperado y volvé a cerrar');
+  }
+  const cont = contadoCierre();
+  if (cont.vacio) return toast('Cargá el cambio que queda y el efectivo que se saca');
+  if (cont.negativo) return toast('Hay un importe en negativo: revisá los números');
   const nombre = ($('#ceTurno').value || '').trim() || nombreTurnoSugerido();
   const fondo = num($('#ceFondo').value);
-  const cambio = num($('#ceCambio').value), efeCont = num($('#ceEfe').value);
-  const cont = cambio + efeCont;
-  const esp = fondo + entra - sale;
+  const esp = redondear(fondo + t.entra - t.sale);
   const ahora = new Date();
   /* El turno termina ahora si se está cerrando el día de hoy; si es un día
-     anterior, termina cuando terminó ese día. */
-  const hasta = (f === hoy()) ? ahora : new Date(f + 'T23:59:59');
+     anterior, termina cuando terminó ese día (hasta el último milisegundo,
+     para que no quede afuera un cobro de las 23:59:59). */
+  let hasta = (f === hoy()) ? ahora : new Date(f + 'T23:59:59.999');
+  /* Con el reloj de esta computadora atrasado respecto de la que cerró el
+     turno anterior, el cierre quedaba antes de su propio comienzo */
+  if (hasta.getTime() <= abierto.desde) hasta = new Date(abierto.desde + 1);
   const reg = {
     id: uid(), fecha: f, turno: nombre,
     desde: new Date(abierto.desde).toISOString(),
     hasta: hasta.toISOString(),
-    fondo: fondo, contado: cont, esperado: esp, dif: cont - esp,
-    cambio: cambio, efectivoCont: efeCont,
-    ventas: ventas, efectivo: entra, salidas: sale,
+    fondo: fondo, contado: cont.total, esperado: esp, dif: redondear(cont.total - esp),
+    cambio: cont.cambio, efectivoCont: cont.efe,
+    ventas: t.ventas, efectivo: t.entra, salidas: t.sale,
+    detalle: detalleTurno(t),
     nota: $('#ceNota').value,
     usuarioId: USUARIO ? USUARIO.id : null,
     usuarioNombre: USUARIO ? USUARIO.nombre : '',
     creado: ahora.toISOString()
   };
+  const cambio = cont.cambio;
   S.cierres.push(reg);
+  CAJA.borrador = null;
   save(); refresh();
   toast('Turno "' + nombre + '" cerrado' + (Math.abs(reg.dif) < 0.005 ? ' — caja justa' : '') +
         ' · quedan ' + fmt(cambio) + ' de cambio');
@@ -476,6 +611,10 @@ function guardarCierre(entra, sale, ventas){
 function reabrirTurno(id){
   if (!soloAdmin('reabrir un turno')) return;
   const c = S.cierres.find(x => x.id === id); if (!c) return;
+  /* Solo el último del día: ver la tabla de turnos en renderCaja */
+  const delDia = turnosDelDia(c.fecha).filter(x => x.cierre);
+  if (delDia.length && delDia[delDia.length - 1].cierre.id !== id)
+    return toast('Primero reabrí los turnos que se cerraron después de este');
   confirmar('¿Reabrir el turno <b>' + esc(c.turno || '') + '</b> del ' + fechaCorta(c.fecha + 'T12:00') + '?<br><br>' +
     'Se borra ese arqueo y sus ventas vuelven al turno abierto. Los pedidos no se tocan.', () => {
       S.cierres = S.cierres.filter(x => x.id !== id);
@@ -620,9 +759,14 @@ function imprimirTicket(id){
 function imprimirCierre(id){
   const c = S.cierres.find(x => x.id === id);
   if (!c) return toast('No encontré ese arqueo');
-  /* Se rearman los medios de pago del turno a partir de su rango */
-  const suyo = turnosDelDia(c.fecha).filter(x => x.cierre && x.cierre.id === c.id)[0];
-  const t = suyo ? numerosTurno(c.fecha, suyo) : null;
+  /* Desde el 21/10/2026 el cierre guarda su detalle (ver detalleTurno). Los
+     de antes se rearman a partir de su rango, como se hacía siempre. */
+  let t = null;
+  if (c.detalle) t = Object.assign({}, c.detalle, { pedidos: { length: c.detalle.pedidos } });
+  else {
+    const suyo = turnosDelDia(c.fecha).filter(x => x.cierre && x.cierre.id === c.id)[0];
+    t = suyo ? numerosTurno(c.fecha, suyo) : null;
+  }
   const porPago = t ? t.porPago : {};
   const medios = Object.keys(porPago).filter(k => porPago[k]);
   $('#tk').innerHTML =

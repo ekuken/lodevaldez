@@ -18,7 +18,8 @@ proveedores y usuarios. Corre en el navegador, sin instalar nada ni internet.
       07-proveedores.js     proveedores y compras
       08-cuentas.js         cuentas corrientes
       09-ajustes.js         configuración, respaldos y ayuda
-      10-inicio.js          arranque del sistema y sesión
+      10-estadisticas.js    estadísticas por período (solo lectura)
+      11-inicio.js          arranque del sistema y sesión
     construir.py    junta todo en un único "Sistema Cafe.html"
 
 ## Cómo trabajarlo
