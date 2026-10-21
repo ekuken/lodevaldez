@@ -76,7 +76,7 @@ function uid(){ return Date.now().toString(36) + Math.random().toString(36).slic
    Lo que había en localStorage se pasa solo la primera vez y recién se
    borra cuando ya quedó escrito en IndexedDB. Si IndexedDB no anda
    (navegador viejo, modo privado), se sigue usando localStorage. */
-const ALMACEN = { db: null, abierto: false, cache: {} };
+const ALMACEN = { db: null, abierto: false, cache: {}, deLocalStorage: {} };
 /* Todo con límite de tiempo. Abriendo el sistema como archivo suelto
    (file://), Chrome puede no contestar NUNCA: ni éxito ni error. Sin el
    límite, el arranque se quedaba esperando y la pantalla en blanco. */
@@ -119,14 +119,17 @@ async function almacenPreparar(claves){
   for (const k of claves){
     let ls = null;
     try{ ls = localStorage.getItem(k); }catch(e){}
-    if (!ALMACEN.db){ ALMACEN.cache[k] = ls; continue; }
+    /* Si lo de esta clave sale de localStorage, puede estar viejo: ver
+       cargarDesdeNube */
+    ALMACEN.deLocalStorage[k] = false;
+    if (!ALMACEN.db){ ALMACEN.cache[k] = ls; ALMACEN.deLocalStorage[k] = ls != null; continue; }
     const r = await almacenPedido('readonly', st => st.get(k));
     let v = r.ok && typeof r.valor === 'string' ? r.valor : null;
     if (v == null && ls != null){
       /* Primera vez con esta versión: se pasa lo de localStorage */
       const w = await almacenPedido('readwrite', st => st.put(ls, k));
-      if (w.ok) v = ls;
-      else { ALMACEN.cache[k] = ls; continue; }   /* no se pudo: se queda donde estaba */
+      if (w.ok){ v = ls; ALMACEN.deLocalStorage[k] = true; }
+      else { ALMACEN.cache[k] = ls; ALMACEN.deLocalStorage[k] = true; continue; }   /* no se pudo: se queda donde estaba */
     }
     /* Ya está a salvo en IndexedDB: se libera el lugar en localStorage */
     if (v != null && ls != null){ try{ localStorage.removeItem(k); }catch(e){} }
@@ -201,7 +204,27 @@ async function cargarDesdeNube(){
   }
   /* Si acá se acaba de armar el café de ejemplo, no se combina: se toma el
      de la nube tal cual (ver SEMBRADO_AHORA arriba). */
-  nubeJuntarConLaNube(remoto, SEMBRADO_AHORA);
+  /* ---------- Lo de acá quedó más viejo que la referencia ----------
+     Pasó en Valdez el 20/10/2026. Con localStorage lleno, a veces fallaba
+     el guardado del café y a veces el de la referencia: quedaban de fechas
+     distintas. Al abrir, el café de acá era de antes de cobrar varias mesas
+     y la referencia era de después. Combinando, "acá están abiertas y en la
+     referencia cerradas" se lee como "acá alguien las volvió a abrir", y se
+     reabrieron en la nube. Cada guardado normal deja el café con fecha
+     igual o posterior a la referencia, así que si queda antes, el café de
+     acá es viejo. Ahí no se combina: se toma lo de la nube, que tiene todo
+     porque las subidas salían de la memoria aunque fallara el disco.
+     Solo se mira con lo que viene de localStorage (los equipos que todavía
+     no pasaron a IndexedDB, o los que no lo tienen). Desde IndexedDB no
+     falla de a una copia, y con relojes corridos esto podría tirar trabajo
+     hecho sin internet. */
+  const base = nubeBaseLeer();
+  const viejoAca = !SEMBRADO_AHORA && ALMACEN.deLocalStorage[KEY()] &&
+                   S && S.guardado && base && base.guardado && S.guardado < base.guardado;
+  if (viejoAca)
+    console.warn('[nube] lo guardado acá (' + S.guardado + ') es anterior a la referencia (' +
+                 base.guardado + '): se toma la nube sin combinar.');
+  nubeJuntarConLaNube(remoto, SEMBRADO_AHORA || viejoAca);
   SEMBRADO_AHORA = false;
 }
 
